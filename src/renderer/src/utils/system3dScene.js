@@ -9,7 +9,7 @@
  * 自转轴倾角）一律由 `hashString(node.id || node.name)` 推导 —— 同一项目每次打开长得一模一样。
  */
 
-import { PLANET_CLASSES, hashString, isPlanetClassId } from './planetArt.js';
+import { PLANET_CLASSES, atmosphereForClass, hashString, isPlanetClassId } from './planetArt.js';
 
 // ===== 尺寸口径（与 SP-1025 一致的低模观感；单位是场景单位，不是像素） =====
 export const SYS3D_GEOM = {
@@ -209,11 +209,15 @@ export function buildSystem3dScene(input = {}) {
     //    见 orbitRadius3dByIndex 的注释（含为什么不改 2D 那份）。
     const orbit = orbitRadius3dByIndex(index);
     const moonNodes = moonsByParent.get(node.id) || [];
+    const cid = isPlanetClassId(classId) ? classId : PLANET_CLASSES[0].id;
     return {
       id: key,
       name: node.displayName || node.name || '未命名天体',
       kind: station ? 'station' : 'planet',
-      classId: isPlanetClassId(classId) ? classId : PLANET_CLASSES[0].id,
+      classId: cid,
+      // 大气边缘光参数（2026-11-25）：**每颗行星都有**，浓淡按类别分档。
+      // 空间站没有大气（它是金属壳，给光晕会像颗小行星）。
+      atmo: station ? null : atmosphereForClass(cid),
       orbit,
       size: station ? SYS3D_GEOM.stationSize : SYS3D_GEOM.planetBaseSize * sizeScale,
       // 初始相位（散列）与公转角速度（开普勒式：外圈慢）

@@ -97,6 +97,51 @@ export function hasRing(classId) {
   return planetClassDef(classId).kind === 'bands';
 }
 
+/**
+ * 大气边缘光的**强度档**（2026-11-25）。
+ *
+ * 用户原话：「顺便很多行星根本没有大气」——指的是 3D 里每颗行星都是**硬边球**：
+ * 一颗球贴一张贴图，轮廓就是球面的边界，没有任何"裹着一层气"的过渡。
+ * 群星参考图里每颗行星都有一圈柔光（浓淡不同），那是行星最容易读成"球"的线索。
+ *
+ * 为什么强度要分档而不是一刀切：**荒芜/冰封**这类天体在设定上本来就只有极稀薄的一层，
+ * 给它一个盖亚级别的光晕会立刻显得假；但完全不给又会退回"硬边球"。
+ * 所以下限不是 0 —— 每颗行星都有一圈，只是死星系那几类薄得多（0.25 vs 1.0）。
+ * 判据（`test_system3d_scene.js` a12）钉死两件事：**任何类别的强度都 > 0**（不许有"没有大气"的行星），
+ * 且**死星系三类的强度必须明显小于宜居类**（不是所有人都裹同一层）。
+ *
+ * 数值口径：1.0 = 标准（大陆/海洋/热带/气巨）；>1 = 更厚（盖亚/巨行星）；<1 = 更薄。
+ * 这是**观感系数**，不是物理大气压 —— 不要拿它去算任何数据。
+ */
+const ATMO_STRENGTH = Object.freeze({
+  continental: 1.0, ocean: 1.0, tropical: 1.0, gaia: 1.15, savanna: 0.85,
+  arid: 0.7, desert: 0.6, tundra: 0.6, arctic: 0.55, alpine: 0.6,
+  city: 0.75, machine: 0.4,
+  molten: 0.7, toxic: 0.85, frozen: 0.4, barren: 0.25,
+  gasGiant: 1.15, iceGiant: 1.15,
+});
+
+/**
+ * 某个行星类别的**大气边缘光参数**（3D 观景用；纯函数）。
+ *
+ * @param {string} classId
+ * @returns {{ color: string, strength: number, kind: 'terra'|'bands'|'dead' }}
+ *   `color` 恒为 `#rrggbb`（脏值回落主色），`strength` 恒落在 [0.2, 1.2]。
+ */
+export function atmosphereForClass(classId) {
+  const def = planetClassDef(classId);
+  const raw = typeof def.atmosphere === 'string' && def.atmosphere[0] === '#'
+    ? def.atmosphere
+    : def.base;
+  const strength = ATMO_STRENGTH[def.id] ?? 0.6;
+  return {
+    color: raw,
+    // 夹一下：ATMO_STRENGTH 里写错一个小数点也不许让光晕变成一坨白
+    strength: Math.max(0.2, Math.min(1.2, strength)),
+    kind: def.kind,
+  };
+}
+
 /** rgba 字符串（alpha 0~1）；输入必须是 #rrggbb。 */
 export function hexAlpha(hex, alpha) {
   const h = typeof hex === 'string' && hex[0] === '#' ? hex : '#888888';

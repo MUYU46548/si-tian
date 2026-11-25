@@ -56,8 +56,10 @@
 /**
  * 星系 3D 观景（2026-10-27 计划 §1，独立一轮交付）
  *
- * 低配口径（SP-1025 已踩过，照抄）：AA 关 / 无阴影 / 24×16 低模 / MeshLambert / 像素比封顶 1.5 /
- * 关闭即遍历 dispose / OrbitControls 阻尼 / rAF + 可见性暂停。
+ * 低配口径（SP-1025 已踩过，照抄）：无阴影 / 低模 / MeshLambert / 关闭即遍历 dispose /
+ * OrbitControls 阻尼 / rAF + 可见性暂停。
+ * ⚠️ 2026-11-25 起 AA 是**开**的、像素比上限 2、球面 40×28 —— 单星系是近景主视图，
+ *    旧的"低配观感"取舍用在这里就是"锯齿 + 模糊"（见 init() 里的长注释）。
  *
  * 四条必须守住的纪律：
  * 1) **three 不进首屏**：`await import('three')` 放在 onMounted 里 → Vite 单独出 chunk。
@@ -70,7 +72,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import Icon from './Icon.vue';
 import {
-  PLANET_CLASSES, SeededRng, getPlanetTexture, hashString, hexAlpha, planetClassLabel,
+  PLANET_CLASSES, SeededRng, atmosphereForClass, getPlanetTexture, hashString, hexAlpha, planetClassLabel,
 } from '../utils/planetArt.js';
 import { SYS3D_QUALITY, nextQualityLevel } from '../utils/system3dScene.js';
 
@@ -136,6 +138,13 @@ function onClassChange(e) {
     track(tex);
     hit.mat.map = tex;
     hit.mat.needsUpdate = true;
+    // 大气色/浓淡也跟着类别走：荒芜 → 盖亚，边缘光不能还是原来那圈土黄
+    if (hit.atmoMat) {
+      const atmo = atmosphereForClass(classId);
+      hit.atmoMat.uniforms.uColor.value.set(atmo.color);
+      hit.atmoMat.userData.baseStrength = atmo.strength * ATMO_GAIN;
+      hit.atmoMat.uniforms.uStrength.value = atmo.strength * ATMO_GAIN * atmoScale;
+    }
     picked.value = { ...picked.value, classId };
   }
   emit('set-class', { id, classId });
@@ -164,6 +173,24 @@ const labels = [];
 const orbits = [];
 /** E3：伴星 pivot（公转角度每帧推进） */
 const starPivots = [];
+/**
+ * 大气壳层的材质清单（2026-11-25）。
+ * 一是给排障口 `setAtmosphereScale` 用（验收要做"关掉必红"的反向探针），
+ * 二是给 `stats.atmospheres` 计数 —— 判据「每颗行星都得有大气」要读得到数。
+ */
+const atmoMats = [];
+/** 日冕材质（每帧慢转：静止的放射光针看着像贴纸） */
+const coronaMats = [];
+/** 大气强度总系数（排障口可改；0 = 全关） */
+let atmoScale = 1;
+/** 大气壳层半径 = 行星半径 × 这个倍数（1.22 → 光晕向外延伸约 22% 半径；量过 1.18 只剩 ~1.10R） */
+const ATMO_SHELL = 1.22;
+/**
+ * 大气整体增益（**观感系数**，不是又一张分类表）。
+ * 1.0 时贴近轮廓那一圈的 alpha 能到 0.85 —— 在 140px 的行星上就是一圈发白的浓雾；
+ * 0.72 是看着"裹了一层气"而不是"套了个发光垫圈"的那个值（2026-11-25 截图上量的）。
+ */
+const ATMO_GAIN = 0.72;
 const projectVec = { v: null };
 let lastFpsStamp = 0;
 let framesSinceStamp = 0;
@@ -202,6 +229,10 @@ const stats = {
   frames: 0,
   labels: 0,
   error: '',
+  // 2026-11-25：大气壳层计数（判据：必须 == planets）与总系数（反向探针用）
+  atmospheres: 0,
+  planets: 0,
+  atmoScale: 1,
 };
 
 function track(d) {
@@ -274,6 +305,213 @@ function makeGlowTexture(tint) {
   return tex;
 }
 
+/**
+ * 恒星本体材质（2026-11-25）：**自发光球 + 临边昏暗**，用着色器做在球面上。
+ *
+ * 之前是 `MeshBasicMaterial` 平涂 + 一张"暗边 sprite"贴在前面（makeLimbTexture）。
+ * 那张 sprite 有两个毛病：① 它是个**平面**，恒星在屏幕边缘时暗边圈和球对不上；
+ * ② 平涂球完全没有"中间过曝、边缘偏色"的太阳质感 —— 截图里就是一块橙色圆盘。
+ *
+ * 现在：球面按"正对相机程度"混两色 —— 中心接近白（过曝），边缘压暗并偏回本色。
+ * 这比 sprite 版多不了几个像素的代价，但恒星一眼是"发光的球"而不是"圆盘"。
+ *
+ * ⚠️ 颜色口径：自定义 ShaderMaterial **不经过** `renderer.outputEncoding` 的 sRGB 转换
+ *    （那是内置材质才有的 fragment chunk）。所以这里直接输出**作者写的 sRGB 值**，
+ *    与 CanvasTexture（sRGB 解码）画出来的光晕在同一空间里，不会一深一浅。
+ */
+function makeStarMaterial(tint) {
+  const core = new THREE.Color(tint).lerp(new THREE.Color(0xffffff), 0.72);
+  const edge = new THREE.Color(tint).multiplyScalar(0.5);
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uCore: { value: core },
+      uEdge: { value: edge },
+      // 1.0 = 按 cos(视角) 线性压暗（临边昏暗的经典近似）。
+      // 之前 0.6 等于"整块盘都接近亮核"，所以看起来是平圆盘而不是球。
+      uPow: { value: 1.0 },
+    },
+    vertexShader: `
+      varying vec3 vViewNormal;
+      varying vec3 vViewPos;
+      void main() {
+        vViewNormal = normalize(normalMatrix * normal);
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vViewPos = mv.xyz;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `
+      uniform vec3 uCore;
+      uniform vec3 uEdge;
+      uniform float uPow;
+      varying vec3 vViewNormal;
+      varying vec3 vViewPos;
+      void main() {
+        float facing = clamp(dot(normalize(vViewNormal), normalize(-vViewPos)), 0.0, 1.0);
+        gl_FragColor = vec4(mix(uEdge, uCore, pow(facing, uPow)), 1.0);
+      }`,
+  });
+}
+
+/**
+ * 行星大气边缘光（2026-11-25，用户：「很多行星根本没有大气」）。
+ *
+ * 做法：比行星**大一圈的背面球壳** + 加色混合，但衰减**不是**按"菲涅耳"算的。
+ *
+ * 🔴 第一版用的是 `1 - |dot(法线, 视线)|`（球壳自己的掠射角），截图里立刻现出两个毛病：
+ *    ① 亮度峰值落在**壳层的轮廓上**，所以外缘是一圈**硬边**（像给行星套了个垫圈）；
+ *    ② 整圈灰蒙蒙、贴边那一截反而是最暗的 —— 不像"气"，像阴影。
+ *    根因：菲涅耳量的是"这层壳表面有多斜"，而大气要的是"这条视线离行星多远"。
+ *
+ * 现在按**冲击参数**（视线到行星中心的最短距离，视空间里就是 `s = |frag.xy - center.xy|`）算：
+ *   把 `s` 归一化成 `t = (s - 行星半径) / (壳层半径 - 行星半径)`，`rim = (1 - t)^0.7` ——
+ *   在行星轮廓处最亮、向外单调衰减到 0，两端都不出硬边。
+ *
+ * 🔴 为什么是 `(1-t)^0.7` 而不是 `1 - smoothstep(...)`（第二版试过，判据直接把它抓了）：
+ *    背面球壳在屏幕上被**透视压扁** —— `t` 从 0.6 到 1.0 那一段在 140px 半径的行星上
+ *    只占 10 来个像素，smoothstep 的两端导数为 0，于是光晕"看着只有薄薄一圈"，
+ *    实测轮廓外 1.06R~1.18R 的平均增量只有 5.9（判据要求 ≥ 6）。幂函数换成小于 1 的指数，
+ *    外段才有能量。这是"数学上均匀"与"屏幕上均匀"的差别 —— 量出来的，不是猜的。
+ *
+ * `lit` 让**朝恒星那一侧更亮**：方向取**屏幕平面**上的（`朝向恒星的视空间 xy`），
+ * 这样"哪边亮"与肉眼看到的光照方向一致；暗面只留一层极淡的轮廓。
+ *
+ * `s` 在一条视线上是不变的（它垂直于视线），所以用顶点的视空间坐标算就精确，不必逐像素射线求交。
+ *
+ * ⚠️ 颜色口径：自定义 ShaderMaterial **不经过** `renderer.outputEncoding` 的 sRGB 转换
+ *    （那是内置材质才有的 fragment chunk）。所以这里直接输出**作者写的 sRGB 值**，
+ *    与 CanvasTexture（sRGB 解码）画出来的贴图在同一空间里，不会一深一浅。
+ */
+function makeAtmosphereMaterial(tint, strength, planetR, shellR) {
+  const base = strength * ATMO_GAIN;
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      uColor: { value: new THREE.Color(tint) },
+      uStrength: { value: base },
+      uPlanetR: { value: planetR },
+      uShellR: { value: shellR },
+    },
+    vertexShader: `
+      varying vec3 vViewPos;
+      varying vec3 vCenterView;
+      void main() {
+        // 行星中心（视空间）+ 本片元（视空间）：两者 xy 之差就是冲击参数
+        vCenterView = (viewMatrix * modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+        vec4 mv = viewMatrix * modelMatrix * vec4(position, 1.0);
+        vViewPos = mv.xyz;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `
+      uniform vec3 uColor;
+      uniform float uStrength;
+      uniform float uPlanetR;
+      uniform float uShellR;
+      varying vec3 vViewPos;
+      varying vec3 vCenterView;
+      void main() {
+        vec2 dv = vViewPos.xy - vCenterView.xy;
+        float s = length(dv);
+        float t = clamp((s - uPlanetR) / max(1e-4, uShellR - uPlanetR), 0.0, 1.0);
+        float rim = pow(1.0 - t, 0.7);
+        // 屏幕平面上"朝恒星"的方向（恒星在世界原点 → 视空间里就是 -行星中心）
+        vec2 starDir = normalize(-vCenterView.xy + vec2(1e-6, 0.0));
+        float lit = 0.55 + 0.45 * clamp(dot(s > 1e-4 ? dv / s : vec2(0.0), starDir), 0.0, 1.0);
+        gl_FragColor = vec4(uColor, rim * uStrength * lit);
+      }`,
+    side: THREE.BackSide,
+    blending: THREE.AdditiveBlending,
+    transparent: true,
+    depthWrite: false,
+  });
+  mat.userData.baseStrength = base;
+  return mat;
+}
+
+/**
+ * 日冕 / 耀斑贴图（2026-11-25，用户：「恒星没有日冕/耀斑 —— 现在是个亮球」）。
+ *
+ * 参考图里的恒星不只是"亮球"：外面有一圈**长短不一的放射光针**，而且整团是缓慢流动的。
+ * 一张 512 的贴图（26 根细锥 + 内层柔光）贴在加色 sprite 上、每帧慢转 —— 静态截图也看得出"毛边"，
+ * 动起来是流动的。全部由 `hashString(tint)` 定种子，同一颗恒星每次打开长得一样。
+ */
+function makeCoronaTexture(tint) {
+  const S = 512;
+  const half = S / 2;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  const rng = new SeededRng(hashString(`corona:${tint}`));
+  g.globalCompositeOperation = 'lighter';
+  // ① 光针：从球面（0.2R）伸到 0.35~0.75R，越长越淡。
+  //    32 根（原来是 26）—— 根数少时那圈放射线太像"画上去的太阳"，多几根、长短差大更像日冕。
+  const RAYS = 32;
+  for (let i = 0; i < RAYS; i++) {
+    const a = (i / RAYS) * Math.PI * 2 + (rng.next() - 0.5) * 0.2;
+    const len = half * (0.35 + rng.next() * 0.4);
+    const w = 0.005 + rng.next() * 0.011;
+    const grad = g.createLinearGradient(half, half, half + Math.cos(a) * len, half + Math.sin(a) * len);
+    grad.addColorStop(0, hexAlpha(tint, 0.46));
+    grad.addColorStop(0.45, hexAlpha(tint, 0.13));
+    grad.addColorStop(1, hexAlpha(tint, 0));
+    g.fillStyle = grad;
+    g.beginPath();
+    g.moveTo(half + Math.cos(a - w) * half * 0.2, half + Math.sin(a - w) * half * 0.2);
+    g.lineTo(half + Math.cos(a) * len, half + Math.sin(a) * len);
+    g.lineTo(half + Math.cos(a + w) * half * 0.2, half + Math.sin(a + w) * half * 0.2);
+    g.closePath();
+    g.fill();
+  }
+  // ② 内层柔光：比"光晕"更宽更淡，把光针的根部接回球面（否则光针像凭空插上去的）
+  const halo = g.createRadialGradient(half, half, half * 0.1, half, half, half * 0.88);
+  halo.addColorStop(0, hexAlpha(tint, 0.26));
+  halo.addColorStop(0.45, hexAlpha(tint, 0.08));
+  halo.addColorStop(1, hexAlpha(tint, 0));
+  g.fillStyle = halo;
+  g.fillRect(0, 0, S, S);
+  const tex = new THREE.CanvasTexture(c);
+  tex.encoding = THREE.sRGBEncoding;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  return tex;
+}
+
+/**
+ * 星云贴图（2026-11-25，用户：「背景空」）：一团软边、内部不均匀的色块。
+ *
+ * 抄的是星域 3D 原型（`scripts/proto/domain3d-proto.html`）那套 —— 那边已经为"深空感"
+ * 调过一轮（3000 颗星场 + 4 团星云 + 1 个亮核）。单星系视图不需要亮核（恒星自己就是亮的），
+ * 只要 4 团极淡的冷色让黑底不平。
+ */
+function makeNebulaTexture(seed) {
+  const S = 256;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  const rng = new SeededRng(seed);
+  const grad = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+  grad.addColorStop(0, 'rgba(255,255,255,0.5)');
+  grad.addColorStop(0.35, 'rgba(255,255,255,0.2)');
+  grad.addColorStop(0.7, 'rgba(255,255,255,0.055)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, S, S);
+  // 叠十几团小浓淡：真实星云是不规则的，一个完美的圆一眼假
+  for (let i = 0; i < 14; i++) {
+    const x = S / 2 + (rng.next() - 0.5) * S * 0.8;
+    const y = S / 2 + (rng.next() - 0.5) * S * 0.8;
+    const r = S * (0.06 + rng.next() * 0.2);
+    const g2 = g.createRadialGradient(x, y, 0, x, y, r);
+    g2.addColorStop(0, `rgba(255,255,255,${0.05 + rng.next() * 0.09})`);
+    g2.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = g2;
+    g.beginPath();
+    g.arc(x, y, r, 0, Math.PI * 2);
+    g.fill();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.encoding = THREE.sRGBEncoding;
+  return tex;
+}
+
 function makeRingTexture() {
   // 环：竖向渐变条带（内缘淡 → 中段实 → 外缘淡），贴到 RingGeometry 的径向 UV 上
   const c = document.createElement('canvas');
@@ -287,26 +525,6 @@ function makeRingTexture() {
   grad.addColorStop(1, 'rgba(232, 214, 176, 0)');
   g.fillStyle = grad;
   g.fillRect(0, 0, 2, 64);
-  const tex = new THREE.CanvasTexture(c);
-  tex.encoding = THREE.sRGBEncoding;
-  return tex;
-}
-
-function makeLimbTexture() {
-  // 临边昏暗（limb darkening）：恒星是自发光体，用 MeshLambert 会得到"背光黑球"，
-  // 用纯色 MeshBasic 又是一块平圆盘。这里叠一张**永远面向相机**的暗边 sprite，
-  // 中心透明、边缘压暗 —— 廉价但立刻有球体的体积感。
-  const c = document.createElement('canvas');
-  c.width = c.height = 128;
-  const g = c.getContext('2d');
-  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-  grad.addColorStop(0, 'rgba(0,0,0,0)');
-  grad.addColorStop(0.55, 'rgba(0,0,0,0)');
-  grad.addColorStop(0.84, 'rgba(26,13,0,0.20)');
-  grad.addColorStop(0.96, 'rgba(20,10,0,0.46)');
-  grad.addColorStop(1, 'rgba(20,10,0,0)');
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 128, 128);
   const tex = new THREE.CanvasTexture(c);
   tex.encoding = THREE.sRGBEncoding;
   return tex;
@@ -350,7 +568,8 @@ function buildScene() {
   // 🔴 2026-11-25：28×20 → 48×32。恒星是画面里最大的物体（半径 2.4，近景可占 250px+），
   //    低段数时轮廓的多边形棱在加色光晕衬托下特别明显 —— 那正是"锯齿感"最集中的地方。
   const starGeo = new THREE.SphereGeometry(spec.star.radius, 48, 32);
-  const starMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(spec.star.tint) });
+  // 2026-11-25：平涂 MeshBasic → 自发光着色器（中间过曝、边缘压暗偏色）。见 makeStarMaterial。
+  const starMat = makeStarMaterial(spec.star.tint);
   const star = new THREE.Mesh(track(starGeo), track(starMat));
   star.name = 'star';
   scene.add(star);
@@ -376,18 +595,25 @@ function buildScene() {
   core.scale.setScalar(spec.star.radius * 2.4);
   scene.add(core);
 
-  // 临边昏暗叠层：尺寸 = 恒星直径，depthTest 关掉（球面比 sprite 平面更靠近相机，
-  // 开着深度测试会被整个吃掉），renderOrder 抬高保证压在恒星上。
-  const limbMat = new THREE.SpriteMaterial({
-    map: track(makeLimbTexture()),
+  // 日冕 / 耀斑（2026-11-25）：一张 32 根光针的加色贴图，比光晕大一圈、每帧慢转。
+  // 光晕（5.6×）给的是"过曝"，日冕（9.6×）给的是"毛边"—— 两者缺一个都像贴纸。
+  const CORONA_OPACITY = 0.55;
+  const coronaMat = new THREE.SpriteMaterial({
+    map: track(makeCoronaTexture(spec.star.tint)),
+    blending: THREE.AdditiveBlending,
     transparent: true,
     depthWrite: false,
-    depthTest: false,
+    opacity: CORONA_OPACITY,
   });
-  const limb = new THREE.Sprite(track(limbMat));
-  limb.scale.setScalar(spec.star.radius * 2.02);
-  limb.renderOrder = 3;
-  scene.add(limb);
+  const corona = new THREE.Sprite(track(coronaMat));
+  corona.scale.setScalar(spec.star.radius * 9.6);
+  corona.renderOrder = 1;
+  scene.add(corona);
+  coronaMat.userData.baseOpacity = CORONA_OPACITY;
+  coronaMats.push(coronaMat);
+
+  // 临边昏暗叠层（sprite 版）2026-11-25 **已删**：那是个贴在恒星前面的平面，
+  // 恒星转到屏幕边缘时暗边圈和球对不上；现在由 makeStarMaterial 在球面上算。
 
   // ── 双星（E3，2026-10-29）：子恒星绕主恒星转，自带点光与光晕 ──────────────────
   // 以前 3D 只按主恒星取色 → 双星系和单星系长得一模一样（数据在 `parentStar` 上，画不出来）。
@@ -447,14 +673,29 @@ function buildScene() {
       : new THREE.SphereGeometry(body.size, 40, 28);
     const mesh = new THREE.Mesh(track(geo), track(mat));
     mesh.rotation.z = body.tilt;
-    // E1：这颗球可被点中（射线检测只认这一份清单）
-    pickables.push({ mesh, mat, body });
     // holder = 行星在轨道上的位置（pivot 只负责公转角度）。卫星/环挂 holder 而不是 mesh：
     // mesh 每帧自转，挂上去卫星轨道会跟着行星一起转（第一版真实踩过）。
     const holder = new THREE.Object3D();
     holder.position.set(body.orbit, 0, 0);
     pivot.add(holder);
     holder.add(mesh);
+
+    // 大气边缘光（2026-11-25，用户：「很多行星根本没有大气」）。
+    // 挂在 holder 上（不吃 mesh 的自转/倾角）：大气层不该跟着地表一起转。
+    // `body.atmo` 由 buildSystem3dScene 给 —— 每颗行星都有，空间站没有。
+    let atmoMat = null;
+    if (body.atmo) {
+      const shellR = body.size * ATMO_SHELL;
+      atmoMat = makeAtmosphereMaterial(body.atmo.color, body.atmo.strength, body.size, shellR);
+      // 壳层段数不必很高（光晕是着色器算的、不吃几何），但轮廓是几何 → 32×22 不肉
+      const atmoGeo = new THREE.SphereGeometry(shellR, 32, 22);
+      const atmo = new THREE.Mesh(track(atmoGeo), track(atmoMat));
+      atmo.renderOrder = 2;      // 透明层：行星之后画，只留轮廓外那一圈
+      holder.add(atmo);
+      atmoMats.push(atmoMat);
+    }
+    // E1：这颗球可被点中（射线检测只认这一份清单）
+    pickables.push({ mesh, mat, body, atmoMat });
 
     if (body.ring) {
       const ringGeo = new THREE.RingGeometry(body.size * 1.35, body.size * 2.1, 64);
@@ -551,10 +792,42 @@ function buildScene() {
     beltMesh = belt;    // E5：降到最低档时整条带子关掉（它是纯装饰、点最多）
   }
 
-  // 背景星空
+  // ── 背景（2026-11-25）：星云 → 星场，两层 ─────────────────────────────
+  // 用户：「背景空」。参考图里的深空不是纯黑，是"几团极淡的冷色 + 一层颗粒感的星"。
+  // 星云先画（renderOrder 更低），星场压在上面；两者都不写深度、不吃光照、不进命中。
+  //
+  // ⚠️ 星云 sprite 放在 1200 距离的球壳上（相机的 far 是 4000、星场是 900~1600）：
+  //    转到哪个角度都有底，不会出现"背景的黑边"。
+  const nebulaDirs = [
+    { color: 0x2e4f86, dir: [0.55, 0.28, 0.79], scale: 980 },    // 冷蓝
+    { color: 0x22665e, dir: [-0.72, 0.34, 0.61], scale: 860 },   // 淡青
+    { color: 0x452f70, dir: [0.22, 0.78, -0.58], scale: 900 },   // 淡紫
+    { color: 0x5c3038, dir: [-0.46, -0.14, -0.87], scale: 780 }, // 暗红
+  ];
+  nebulaDirs.forEach((n, i) => {
+    const mat = new THREE.SpriteMaterial({
+      map: track(makeNebulaTexture(hashString(`${spec.star.name}:nebula:${i}`))),
+      color: new THREE.Color(n.color),
+      transparent: true,
+      opacity: 0.45,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      depthTest: false,
+    });
+    const sp = new THREE.Sprite(track(mat));
+    sp.position.copy(new THREE.Vector3(n.dir[0], n.dir[1], n.dir[2]).normalize().multiplyScalar(1200));
+    sp.scale.setScalar(n.scale);
+    sp.renderOrder = -90;
+    scene.add(sp);
+  });
+
+  // 背景星空：1400 → 2200 颗，亮度按幂律分布（多数暗、少数亮）+ 一点冷/暖色差。
+  // 原来是一片等亮白点，看着像噪点而不是星空 —— 参考图里星的亮度差得很开。
   const srng = new SeededRng(hashString(`${spec.star.name}:stars`));
-  const starN = 1400;
+  const starN = 2200;
   const starPos = new Float32Array(starN * 3);
+  const starCol = new Float32Array(starN * 3);
+  const tmpCol = new THREE.Color();
   for (let i = 0; i < starN; i++) {
     const r = 900 + srng.next() * 700;
     const t = srng.next() * Math.PI * 2;
@@ -562,16 +835,32 @@ function buildScene() {
     starPos[i * 3] = r * Math.sin(ph) * Math.cos(t);
     starPos[i * 3 + 1] = r * Math.cos(ph);
     starPos[i * 3 + 2] = r * Math.sin(ph) * Math.sin(t);
+    const b = 0.2 + 0.8 * Math.pow(srng.next(), 2.4);
+    tmpCol.setHSL(0.55 + srng.next() * 0.14, 0.25 * srng.next(), b * 0.8);
+    starCol[i * 3] = tmpCol.r;
+    starCol[i * 3 + 1] = tmpCol.g;
+    starCol[i * 3 + 2] = tmpCol.b;
   }
   const bgGeo = new THREE.BufferGeometry();
   bgGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-  const bgMat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.6, transparent: true, opacity: 0.75, depthWrite: false });
-  scene.add(new THREE.Points(track(bgGeo), track(bgMat)));
+  bgGeo.setAttribute('color', new THREE.BufferAttribute(starCol, 3));
+  const bgMat = new THREE.PointsMaterial({
+    // sizeAttenuation: false —— 星点固定 1.7px（远景星场不该因为远近变大变小）
+    size: 1.7, sizeAttenuation: false, vertexColors: true,
+    transparent: true, opacity: 0.95, depthWrite: false,
+  });
+  const bgStars = new THREE.Points(track(bgGeo), track(bgMat));
+  bgStars.renderOrder = -80;
+  scene.add(bgStars);
 
   projectVec.v = new THREE.Vector3();
   stats.geometries = renderer.info.memory.geometries;
   stats.textures = renderer.info.memory.textures;
   stats.labels = labels.length;
+  // 验收判据（2026-11-25）：「每颗行星都要有大气」= 壳层数必须等于行星数。
+  // 以前 3D 里一颗都没有 —— 用户说的"很多行星根本没有大气"就是这个。
+  stats.atmospheres = atmoMats.length;
+  stats.planets = spec.bodies.filter((b) => b.kind === 'planet').length;
   // E5：初始就在最高档（不预设降档 —— 用户机器够快就不该看到任何变化）
   stats.quality = { level: qualityLevel, pixelRatio: renderer ? renderer.getPixelRatio() : null, avgFrameMs: 0 };
 }
@@ -593,6 +882,8 @@ function animate() {
       for (const mp of o.moonPivots) mp.pivot.rotation.y += mp.speed * dt;
     }
     for (const s of starPivots) s.pivot.rotation.y += s.speed * dt;
+    // 日冕慢转：静止的放射光针看着像贴纸，转起来才是"被风吹的光"（0.02 rad/s ≈ 5 分钟一圈）
+    for (const m of coronaMats) m.rotation += dt * 0.02;
   }
   controls.update();
   renderer.render(scene, camera);
@@ -666,6 +957,9 @@ function disposeAll() {
   raycaster = null;
   // E3/E5：伴星 pivot 与降档状态也归零（重开 3D 从最高档开始）
   starPivots.length = 0;
+  atmoMats.length = 0;
+  coronaMats.length = 0;
+  atmoScale = 1;
   beltMesh = null;
   qualityLevel = 'high';
   qualityAvgMs = 0;
@@ -776,7 +1070,138 @@ onBeforeUnmount(() => {
 function getStats() {
   return { ...stats, memoryAtDispose: stats.memoryAtDispose ? { ...stats.memoryAtDispose } : null };
 }
-defineExpose({ getStats, paused });
+
+// ===== 验收 / 排障口（2026-11-25）=====
+//
+// 为什么要把这几个函数暴露出来：观感件（大气边缘光）**只能在画出来的像素上验**，
+// 而 headless 下相机位置每次都不同 —— 没有"把镜头对到这颗行星上"的入口，
+// 截图判据就只能靠运气（行星可能在恒星背面、可能被标签压住）。
+// 这三个都**不写数据、不改视图状态**，与 `paused` / `getStats` 同一条性质。
+
+/** 缩放：mult > 1 拉近（相机到目标的距离 ÷ mult），夹在 OrbitControls 的上下限里 */
+function zoomTo(mult) {
+  if (!camera || !controls) return false;
+  const k = Number(mult);
+  if (!Number.isFinite(k) || k <= 0) return false;
+  const off = camera.position.clone().sub(controls.target);
+  const dist = Math.max(controls.minDistance, Math.min(controls.maxDistance, off.length() / k));
+  camera.position.copy(controls.target).add(off.setLength(dist));
+  controls.update();
+  return true;
+}
+
+/**
+ * 把镜头对到某颗行星（验收截图用）。
+ * ⚠️ 行星在公转 —— 不暂停的话下一帧就跑出画面，调用方先按 P（`paused`）。
+ * @param {string} id body.id
+ * @param {number} [distMul] 相机距离 = 行星半径 × distMul（默认 3.2，行星约占屏高 1/3）
+ */
+function focusBody(id, distMul = 3.2) {
+  if (!camera || !controls) return false;
+  const hit = pickables.find((p) => p.body.id === id);
+  if (!hit) return false;
+  const target = new THREE.Vector3();
+  hit.mesh.getWorldPosition(target);
+  controls.target.copy(target);
+  const dist = Math.max(controls.minDistance, hit.body.size * Math.max(1.2, distMul));
+  const dir = new THREE.Vector3(0.62, 0.42, 1).normalize().multiplyScalar(dist);
+  camera.position.copy(target).add(dir);
+  controls.update();
+  return true;
+}
+
+/** 踢一帧（headless 下 rAF 可能挂住：场景换了但画面没刷 → 截图 0 像素差） */
+function tick() {
+  if (!renderer || !scene || !camera) return false;
+  try { controls?.update(); } catch { /* 上下文丢失时忽略 */ }
+  renderer.render(scene, camera);
+  return true;
+}
+
+/** 世界坐标 → 屏幕像素（含画布在页面里的偏移与 devicePixelRatio，截图上直接能采） */
+function projectRect(worldCenter, worldRadius) {
+  const el = renderer?.domElement;
+  if (!el || !camera) return null;
+  // 🔴 必须先强制刷新相机矩阵：`controls.update()` 里只有 `lookAt()` 会改朝向，
+  //    而它内部那次 `updateWorldMatrix` 是在**设新四元数之前**跑的 —— 于是
+  //    `matrixWorld` 会停在"新位置 + 旧朝向"，`matrixWorldInverse` 更是上一次渲染的。
+  //    不刷新就投影，会得到"行星明明在画面正中，算出来却在左上角"这种假数字
+  //    （2026-11-25 第一版判据就是这么错的：B/C 两条全红，其实是采样点偏了 400px）。
+  camera.updateMatrixWorld(true);
+  const w = el.clientWidth || 1;
+  const h = el.clientHeight || 1;
+  const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+  const p0 = worldCenter.clone().project(camera);
+  const p1 = worldCenter.clone().add(right.multiplyScalar(worldRadius)).project(camera);
+  const rect = el.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  return {
+    // canvas 内的 CSS 像素
+    cx: ((p0.x + 1) / 2) * w,
+    cy: ((1 - p0.y) / 2) * h,
+    r: Math.hypot(((p1.x - p0.x) / 2) * w, ((p1.y - p0.y) / 2) * h),
+    // 换算到"整页截图"的像素（截图是 devicePixelRatio 倍）
+    pageCx: (rect.left + ((p0.x + 1) / 2) * w) * dpr,
+    pageCy: (rect.top + ((1 - p0.y) / 2) * h) * dpr,
+    pageR: Math.hypot(((p1.x - p0.x) / 2) * w, ((p1.y - p0.y) / 2) * h) * dpr,
+    dpr,
+  };
+}
+
+/**
+ * 某颗行星在屏幕上的位置/半径 —— **验收判据用**：像素采样得知道往哪儿采。
+ * 行星在公转，所以要采样就得先 `paused = true`（或先 focusBody 再立刻拍）。
+ */
+function bodyScreenRect(id) {
+  const hit = pickables.find((p) => p.body.id === id);
+  if (!hit) return null;
+  const center = new THREE.Vector3();
+  hit.mesh.getWorldPosition(center);
+  return projectRect(center, hit.body.size);
+}
+
+/** 恒星在屏幕上的位置/半径（同上；日冕/临边昏暗的判据要它） */
+function starScreenRect() {
+  return projectRect(new THREE.Vector3(0, 0, 0), props.spec.star.radius);
+}
+
+/** 验收口：列出天体（id/name/kind）—— 截图脚本要挑一颗行星聚焦，不该去猜 spec 的结构 */
+function listBodies() {
+  return pickables.map((p) => ({ id: p.body.id, name: p.body.name, kind: p.body.kind }));
+}
+
+/**
+ * 大气强度总系数（**验收的反向探针**用）：0 = 全关，1 = 正常。
+ * 判据是"关掉之后行星轮廓外那圈亮度必须掉下来"—— 没有这个口就没法证明
+ * 截图里那圈光真的是大气壳层画的，而不是背景星云碰巧亮在那里。
+ */
+function setAtmosphereScale(k) {
+  const v = Number(k);
+  atmoScale = Number.isFinite(v) ? Math.max(0, Math.min(2, v)) : 1;
+  for (const m of atmoMats) {
+    m.uniforms.uStrength.value = (m.userData.baseStrength || 0) * atmoScale;
+  }
+  stats.atmoScale = atmoScale;
+  return atmoScale;
+}
+
+/**
+ * 日冕强度总系数（同样是**验收的反向探针**）：0 = 关掉光针，1 = 正常。
+ * 判据是"关掉之后，恒星周围那一圈的**角向变异系数**必须掉下来"——
+ * 没有这个口就没法证明截图里那些放射光针是日冕画的，而不是星云/背景星碰巧排成那样。
+ */
+function setCoronaScale(k) {
+  const v = Number(k);
+  const s = Number.isFinite(v) ? Math.max(0, Math.min(2, v)) : 1;
+  for (const m of coronaMats) m.opacity = (m.userData.baseOpacity || 0) * s;
+  stats.coronaScale = s;
+  return s;
+}
+
+defineExpose({
+  getStats, paused, zoomTo, focusBody, tick, setAtmosphereScale, setCoronaScale,
+  bodyScreenRect, starScreenRect, listBodies,
+});
 </script>
 
 <style scoped>

@@ -17,6 +17,7 @@
     "prune-backups": "node scripts/prune-backups.mjs",
     "test": "python scripts/tests/run_tests.py",
     "test:visual": "python scripts/tests/drill_visual_suite.py",
+    "test:system3d": "python scripts/tests/drill_system3d_look.py",
     "test:overlays": "python scripts/tests/drill_scenario_overlays_visual.py",
     "test:owner-latency": "python scripts/tests/drill_owner_latency.py",
     "test:undo-latency": "python scripts/tests/drill_undo_latency.py",

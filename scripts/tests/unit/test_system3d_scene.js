@@ -371,6 +371,71 @@ async function main() {
     return 'ok';
   });
 
+  check('a12 大气：18 类都有（不许有"没有大气"的行星），死星系明显更薄', () => {
+    let minS = Infinity;
+    let maxS = -Infinity;
+    for (const c of P.PLANET_CLASSES) {
+      const a = P.atmosphereForClass(c.id);
+      assert(/^#[0-9a-fA-F]{6}$/.test(a.color), `${c.id} 的大气色不是 #rrggbb：${a.color}`);
+      assert(a.strength > 0,
+        `${c.id} 的大气强度为 0 —— 用户说的"很多行星根本没有大气"就是这种（每颗行星都必须有一圈）`);
+      assert(a.strength >= 0.2 && a.strength <= 1.2, `${c.id} 强度越界：${a.strength}`);
+      minS = Math.min(minS, a.strength);
+      maxS = Math.max(maxS, a.strength);
+    }
+    // 死星系（荒芜/冰封/熔岩）必须**明显薄**于宜居类：不是所有行星裹同一层，
+    // 否则"荒芜星球"会顶着一圈盖亚级的柔光（那一眼就假）。
+    const living = P.atmosphereForClass('continental').strength;
+    for (const dead of ['barren', 'frozen', 'molten']) {
+      const s = P.atmosphereForClass(dead).strength;
+      assert(s < living * 0.8, `${dead} 的大气 ${s} 太厚（应 < 宜居类的 ${living} × 0.8）`);
+    }
+    // 脏值回落（绝不许把 undefined 塞进 THREE.Color）
+    const bad = P.atmosphereForClass('不存在');
+    assert(/^#[0-9a-fA-F]{6}$/.test(bad.color) && bad.strength > 0, `非法 classId 没回落：${JSON.stringify(bad)}`);
+    // 确定性：同一类别两次必须一模一样（截图判据可复现）
+    assert(JSON.stringify(P.atmosphereForClass('ocean')) === JSON.stringify(P.atmosphereForClass('ocean')),
+      '大气参数不确定（某处用了随机/时间）');
+    return `${P.PLANET_CLASSES.length} 类 / 强度 ${minS}~${maxS}`;
+  });
+
+  check('a13 构景带大气：每颗行星都有 atmo，空间站没有，且与类别表同源', () => {
+    const sc = S.buildSystem3dScene({
+      starName: '衡佑',
+      planets: [
+        planet('p1', '衡佑Ⅰ', 75),
+        planet('p2', '衡佑Ⅱ', 110, { tags: ['气态巨行星'] }),
+        planet('st', '衡佑站', 145, { tags: ['空间站'] }),
+      ],
+      moons: [],
+    });
+    const planets = sc.bodies.filter((b) => b.kind === 'planet');
+    assert(planets.length === 2, `应有 2 颗行星，实得 ${planets.length}`);
+    for (const b of planets) {
+      assert(b.atmo && typeof b.atmo === 'object', `${b.id} 没有 atmo —— 3D 里就是一颗硬边球`);
+      assert(/^#[0-9a-fA-F]{6}$/.test(b.atmo.color) && b.atmo.strength > 0, `${b.id} 的 atmo 不合法`);
+      const want = P.atmosphereForClass(b.classId);
+      assert(b.atmo.color === want.color && b.atmo.strength === want.strength,
+        `${b.id} 的 atmo 与类别表不一致（两套口径会漂移）`);
+    }
+    const st = sc.bodies.find((b) => b.id === 'st');
+    assert(st && st.atmo === null, '空间站不该有大气（金属壳套光晕会看成小行星）');
+    return `${planets.length} 颗行星都有大气`;
+  });
+
+  check('b4 源码闸门：大气壳层挂在**每颗**行星上，不是"有大气的几类才画"', () => {
+    const src = codeOnly(read('src/renderer/src/components/System3DView.vue'));
+    assert(/let atmoMat = null;\s*if \(body\.atmo\)/.test(src),
+      '找不到"若 body.atmo 就建壳层"的结构（没有这个，行星又会退回硬边球）');
+    assert(/makeAtmosphereMaterial\(\s*body\.atmo\.color,\s*body\.atmo\.strength\b/.test(src),
+      '壳层没有用 spec 里的 atmo（颜色/浓淡必须来自构景层，组件不许自己再判一遍类别）');
+    assert(!/classId\s*===\s*'(terra|bands|dead)'/.test(src),
+      '组件里不许再按类别挑大气 —— 浓淡只有 planetArt 那张表一套口径');
+    assert(src.includes('stats.atmospheres = atmoMats.length'), '缺 atmospheres 计数（真机判据读它）');
+    assert(src.includes('setAtmosphereScale('), '缺反向探针入口 setAtmosphereScale（关掉必红要用）');
+    return 'ok';
+  });
+
   let failed = 0;
   for (const r of results) {
     if (!r.ok) failed += 1;

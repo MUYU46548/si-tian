@@ -1,0 +1,64 @@
+{
+  "checks": [
+    {
+      "id": "A",
+      "ok": true,
+      "detail": "atmospheres=2 planets=2"
+    },
+    {
+      "id": "B",
+      "ok": true,
+      "detail": "halo_on=106.38 halo_off=82.48 gain=23.90 (>= 6.0)"
+    },
+    {
+      "id": "C",
+      "ok": true,
+      "detail": "hot=27710 环内占比=1.000 (>= 0.90) 轮廓外最大差=0.0 (<= 0)"
+    },
+    {
+      "id": "D",
+      "ok": true,
+      "detail": "corona mean_diff=12.69 (>= 1.5) cv_diff=0.586 (>= 0.35)"
+    }
+  ],
+  "shots": [
+    "system3d-current.png",
+    "system3d-current-nocorona.png",
+    "system3d-close.png",
+    "system3d-planet.png",
+    "system3d-planet-off.png"
+  ],
+  "pixels": {
+    "r": 140.27,
+    "halo_on": 106.38,
+    "halo_off": 82.48,
+    "gain": 23.9,
+    "hot": 27710,
+    "hot_in_rim": 27710,
+    "rim_fraction": 1.0,
+    "max_diff_outside": 0.0
+  },
+  "corona": {
+    "r": 62.97,
+    "mean_diff": 12.69,
+    "cv_diff": 0.586
+  },
+  "stats": {
+    "geometries": 10,
+    "textures": 6,
+    "memoryAtDispose": null,
+    "disposed": 34,
+    "frames": 269,
+    "labels": 2,
+    "error": "",
+    "atmospheres": 2,
+    "planets": 2,
+    "atmoScale": 1,
+    "quality": {
+      "level": "high",
+      "pixelRatio": 1,
+      "avgFrameMs": 0
+    },
+    "coronaScale": 1
+  }
+}
