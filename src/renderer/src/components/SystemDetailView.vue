@@ -318,6 +318,15 @@ function on3dSetClass(payload) {
   emit('dirty', true);
 }
 
+/** 3D 卡片上的逐颗改色：写 node.planetColors（与 set-class 同一条写口） */
+function on3dSetColors(payload) {
+  const id = payload && payload.id;
+  const colors = payload && payload.colors;
+  if (!id || !colors || typeof colors !== 'object') return;
+  store.updateNode(id, { planetColors: colors });
+  emit('dirty', true);
+}
+
 // ===== 太空实体数据（B6 标记 / B7 部队卡片）：只取当前恒星系的（只渲染当前层级） =====
 // null 坐标（缓存缺字段）落回恒星原点，避免 NaN 破坏绘制/命中
 const systemSpaceMarkers = computed(() => {
