@@ -517,6 +517,15 @@ async function main() {
     return 'ok';
   });
 
+  check('b7 源码闸门：有环的行星必须有环投下的暗带（挂在行星本体上，随自转/倾角）', () => {
+    const src = codeOnly(read('src/renderer/src/components/System3DView.vue'));
+    assert(src.includes('function makeRingShadowMaterial('), '缺环投影暗带的材质');
+    assert(src.includes('mesh.add(shadow)'), '暗带没挂在行星本体上（挂 holder 的话不跟着自转/倾角）');
+    assert(src.includes('vLocalPos.y / uRadius'), '暗带没用"到环面的距离"（局部 y）算，投影方向会错');
+    assert(src.includes('stats.ringShadows = ringShadowCount'), '缺 ringShadows 计数（判据 A5 读它）');
+    return 'ok';
+  });
+
   let failed = 0;
   for (const r of results) {
     if (!r.ok) failed += 1;

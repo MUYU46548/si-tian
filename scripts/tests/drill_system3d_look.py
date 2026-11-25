@@ -404,7 +404,9 @@ def main():
         ok_a2 = bool(moon_n) and moon_atmo == moon_n
         ok_a3 = bool(cloud_n) and cloud_n >= 1
         ring_n = stats.get('rings')
+        ring_shadow_n = stats.get('ringShadows')
         ok_a4 = bool(ring_n) and ring_n >= 1
+        ok_a5 = ring_shadow_n == ring_n
         report['checks'].append({
             'id': 'A2', 'ok': ok_a2,
             'detail': f'moonAtmospheres={moon_atmo} moons={moon_n}',
@@ -421,6 +423,7 @@ def main():
               + ('' if moon_n else '（mock 里没卫星，跳过）'))
         print(f"   A3 云层叠上了：clouds={cloud_n}（行星 {planet_n}）→ {'✅' if ok_a3 else '❌'}")
         print(f"   A4 气巨的环建起来了：rings={ring_n} → {'✅' if ok_a4 else '❌'}")
+        print(f"   A5 环在行星上投了暗带：ringShadows={ring_shadow_n} / rings={ring_n} → {'✅' if ok_a5 else '❌'}")
 
         # ── 近景：拉近一档再拍（**必须在 focusBody 之前**：focusBody 会把相机拉到
         #     minDistance=4，之后再 zoomTo 会被夹回同一个距离 → 两张图字节相同）。
@@ -560,6 +563,7 @@ def main():
         with open(os.path.join(OUT_DIR, 'report.json'), 'w', encoding='utf-8') as fh:
             json.dump(report, fh, ensure_ascii=False, indent=2)
 
+        report['checks'].append({'id': 'A5', 'ok': ok_a5, 'detail': f'ringShadows={ring_shadow_n} rings={ring_n}'})
         bad = [c for c in report['checks'] if not c['ok']]
         print()
         print('=' * 62)

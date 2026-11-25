@@ -190,6 +190,8 @@ const cloudMeshes = [];
 let atmoScale = 1;
 /** 建了几个环（验收读数：气巨/冰巨必须各有一个） */
 let ringCount = 0;
+/** 环的暗带（判据 A5：有环就必须有投影暗带） */
+let ringShadowCount = 0;
 /** 大气壳层半径 = 行星半径 × 这个倍数（1.22 → 光晕向外延伸约 22% 半径；量过 1.18 只剩 ~1.10R） */
 const ATMO_SHELL = 1.22;
 /**
@@ -534,6 +536,59 @@ function makeNebulaTexture(seed) {
  *
  * 带隙：中段留两条低不透明度的窄缝（真实环的卡西尼缝），内缘淡入、外缘渐隐。
  */
+/**
+ * 环投在行星上的**暗带**（2026-11-25 第四轮）。
+ *
+ * 真实的行星环会挡住阳光，在行星赤道带压出一条比周围暗的带子 —— 气巨的"球感"
+ * 有一半来自这个细节（不然环看起来像贴在球外面的一张纸）。
+ *
+ * 做法：贴着一层 1.004R 的球壳，用着色器在**行星局部坐标**里量"离环面多远"。
+ *   环躺在行星赤道面里（`ringTilt.rotation.z = body.tilt` + RingGeometry 摆平），
+ *   所以局部 y 就是**到环面的距离**：`|y| < uBand` 的地方压暗，边缘平滑过渡。
+ *   再乘一个"受光程度"：暗面本来就黑，暗带只在**受光侧**才看得见。
+ *
+ * 为什么不用真阴影贴图（shadowMap）：那要给整个场景开阴影 + 让环投光，
+ * 代价是帧耗翻倍（这个视图还有日冕/云/大气三层加色），而效果用一条带子就够了。
+ */
+function makeRingShadowMaterial(planetR) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uRadius: { value: planetR },
+      // 0.34 ≈ 环的投影带半高（相对半径）。再宽会把两极也压暗，看起来像"行星被切了一刀"。
+      uBand: { value: 0.34 },
+      uStrength: { value: 0.55 },
+    },
+    vertexShader: `
+      varying vec3 vLocalPos;
+      varying vec3 vWorldNormal;
+      varying vec3 vWorldPos;
+      void main() {
+        vLocalPos = position;
+        vWorldNormal = normalize(mat3(modelMatrix) * normal);
+        vec4 wp = modelMatrix * vec4(position, 1.0);
+        vWorldPos = wp.xyz;
+        gl_Position = projectionMatrix * viewMatrix * wp;
+      }`,
+    fragmentShader: `
+      uniform float uRadius;
+      uniform float uBand;
+      uniform float uStrength;
+      varying vec3 vLocalPos;
+      varying vec3 vWorldNormal;
+      varying vec3 vWorldPos;
+      void main() {
+        float y = clamp(vLocalPos.y / uRadius, -1.0, 1.0);
+        float band = 1.0 - smoothstep(uBand * 0.55, uBand, abs(y));
+        vec3 toStar = normalize(-vWorldPos);
+        float lit = smoothstep(-0.15, 0.35, dot(normalize(vWorldNormal), toStar));
+        gl_FragColor = vec4(0.0, 0.0, 0.0, band * lit * uStrength);
+      }`,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.FrontSide,
+  });
+}
+
 function makeRingTexture() {
   const S = 256;
   const half = S / 2;
@@ -769,6 +824,14 @@ function buildScene() {
       ringTilt.add(ring);
       holder.add(ringTilt);
       ringCount += 1;
+
+      // 环投在行星赤道带上的暗带（挂在 mesh 上：跟着自转/倾角一起走）
+      const shadowMat = makeRingShadowMaterial(body.size);
+      const shadowGeo = new THREE.SphereGeometry(body.size * 1.004, 40, 28);
+      const shadow = new THREE.Mesh(track(shadowGeo), track(shadowMat));
+      shadow.renderOrder = 1;
+      mesh.add(shadow);
+      ringShadowCount += 1;
     }
 
     const moonPivots = [];
@@ -943,6 +1006,7 @@ function buildScene() {
   stats.moons = spec.bodies.reduce((n, b) => n + b.moons.length, 0);
   stats.clouds = cloudMeshes.length;
   stats.rings = ringCount;
+  stats.ringShadows = ringShadowCount;
   // E5：初始就在最高档（不预设降档 —— 用户机器够快就不该看到任何变化）
   stats.quality = { level: qualityLevel, pixelRatio: renderer ? renderer.getPixelRatio() : null, avgFrameMs: 0 };
 }
@@ -1048,6 +1112,7 @@ function disposeAll() {
   coronaMats.length = 0;
   cloudMeshes.length = 0;
   ringCount = 0;
+  ringShadowCount = 0;
   atmoScale = 1;
   beltMesh = null;
   qualityLevel = 'high';
