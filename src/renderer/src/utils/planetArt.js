@@ -6,7 +6,7 @@
  * 本文件内的确定性 RNG —— 司天不引整个 prng 模块，且**禁止 Math.random**
  * （同一 classId 每次得到的像素完全一致，验收截图可复现）。
  *
- * 一张纹理 = 一个行星类别（等距圆柱风格，256×128），供 `THREE.CanvasTexture` 贴球面。
+ * 一张纹理 = 一个行星类别（等距圆柱风格，512×256），供 `THREE.CanvasTexture` 贴球面；
  * 新增类别 = 加一条 def，不改渲染器。
  *
  * 18 类：宜居九型 + 死星系 + 气巨/冰巨 + 人造两型。
@@ -155,7 +155,15 @@ export function hexAlpha(hex, alpha) {
 const textureCache = new Map();
 
 /**
- * 平面纹理（等距圆柱风格，256×128）：3D 观景的球面贴图。
+ * 平面纹理（等距圆柱风格）：3D 观景的球面贴图。
+ *
+ * 🔴 2026-11-25 第二轮：256×128 → **512×256**。用户说的"近景看得出色块边界"就是它：
+ *    行星在聚焦档能占 300px 直径，256 宽的贴图裹满整个球面 → 赤道附近 1 个纹素要摊到
+ *    1.2 个屏幕像素，陆块边缘直接是**方块**。4 倍像素之后同一处的纹素密度翻倍。
+ *    ⚠️ 所有特征尺寸都按 `S = W / 256` 缩放 —— 只放大画布不缩放笔触，陆块会变成
+ *    "相对更小更碎"的斑点，配色没变但地貌完全变了（那是另一张图，不是更清晰的一张）。
+ *    代价：18 类 × 512×256×4 ≈ 9.4 MB 显存（原 2.4 MB），只在 3D/2D 行星视图用得到。
+ *
  * @param {string} classId
  * @returns {HTMLCanvasElement}
  */
@@ -165,8 +173,10 @@ export function getPlanetTexture(classId) {
   if (cached) return cached;
   const def = planetClassDef(key);
   const rng = new SeededRng(hashString(key));
-  const W = 256;
-  const H = 128;
+  const W = 512;
+  const H = 256;
+  /** 与旧 256×128 版保持**同一套构图**的缩放系数 */
+  const S = W / 256;
   const c = document.createElement('canvas');
   c.width = W;
   c.height = H;
@@ -183,7 +193,7 @@ export function getPlanetTexture(classId) {
     g.globalAlpha = 0.12;
     for (let i = 0; i < 16; i++) {
       g.fillStyle = rng.next() < 0.5 ? '#ffffff' : '#000000';
-      g.fillRect(0, rng.range(0, H), W, 1 + rng.next() * 1.5);
+      g.fillRect(0, rng.range(0, H), W, (1 + rng.next() * 1.5) * S);
     }
     g.globalAlpha = 1;
   } else {
@@ -196,7 +206,7 @@ export function getPlanetTexture(classId) {
         g.beginPath();
         g.ellipse(
           rng.range(0, W), rng.range(H * 0.16, H * 0.84),
-          rng.range(6, 30), rng.range(4, 16), rng.range(0, 3), 0, Math.PI * 2
+          rng.range(6, 30) * S, rng.range(4, 16) * S, rng.range(0, 3), 0, Math.PI * 2
         );
         g.fill();
       }
@@ -205,32 +215,34 @@ export function getPlanetTexture(classId) {
     if (def.grid) {
       // 机械：面板网格
       g.strokeStyle = 'rgba(20,20,24,0.55)';
-      g.lineWidth = 1;
-      for (let x = 0; x <= W; x += 16) {
+      g.lineWidth = 1 * S;
+      const step = 16 * S;
+      for (let x = 0; x <= W; x += step) {
         g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke();
       }
-      for (let y = 0; y <= H; y += 16) {
+      for (let y = 0; y <= H; y += step) {
         g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke();
       }
       for (let i = 0; i < 26; i++) {
         g.fillStyle = rng.next() < 0.5 ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.12)';
-        g.fillRect(Math.floor(rng.range(0, W) / 16) * 16, Math.floor(rng.range(0, H) / 16) * 16, 16, 16);
+        g.fillRect(Math.floor(rng.range(0, W) / step) * step,
+          Math.floor(rng.range(0, H) / step) * step, step, step);
       }
     }
     if (def.lava) {
       // 熔岩裂纹：随机游走的亮线
       for (let i = 0; i < 12; i++) {
         g.strokeStyle = 'rgba(255,122,32,0.9)';
-        g.lineWidth = 1 + rng.next() * 1.6;
+        g.lineWidth = (1 + rng.next() * 1.6) * S;
         g.shadowColor = 'rgba(255,140,40,0.8)';
-        g.shadowBlur = 4;
+        g.shadowBlur = 4 * S;
         g.beginPath();
         let x = rng.range(0, W);
         let y = rng.range(0, H);
         g.moveTo(x, y);
         for (let k = 0; k < 8; k++) {
-          x += rng.range(-26, 26);
-          y += rng.range(-12, 12);
+          x += rng.range(-26, 26) * S;
+          y += rng.range(-12, 12) * S;
           g.lineTo(x, y);
         }
         g.stroke();
@@ -241,19 +253,19 @@ export function getPlanetTexture(classId) {
       for (let i = 0; i < 9; i++) {
         g.strokeStyle = def.swirl;
         g.globalAlpha = 0.5;
-        g.lineWidth = 1 + rng.next() * 2;
+        g.lineWidth = (1 + rng.next() * 2) * S;
         g.beginPath();
         const cx = rng.range(0, W);
         const cy = rng.range(H * 0.2, H * 0.8);
-        g.arc(cx, cy, rng.range(6, 22), rng.range(0, 3), rng.range(3.5, 6.5));
+        g.arc(cx, cy, rng.range(6, 22) * S, rng.range(0, 3), rng.range(3.5, 6.5));
         g.stroke();
       }
       g.globalAlpha = 1;
     }
     if (def.cap) {
       g.fillStyle = def.cap;
-      const top = 6 + rng.next() * 8;
-      const bot = 6 + rng.next() * 8;
+      const top = (6 + rng.next() * 8) * S;
+      const bot = (6 + rng.next() * 8) * S;
       g.fillRect(0, 0, W, top);
       g.fillRect(0, H - bot, W, bot);
     }
@@ -261,7 +273,7 @@ export function getPlanetTexture(classId) {
       // 都市夜灯：暖色光点 + 少量冷色
       for (let i = 0; i < 90; i++) {
         g.fillStyle = rng.next() < 0.75 ? 'rgba(255,214,130,0.95)' : 'rgba(140,200,255,0.8)';
-        g.fillRect(rng.range(0, W), rng.range(H * 0.2, H * 0.8), 1.2, 1.2);
+        g.fillRect(rng.range(0, W), rng.range(H * 0.2, H * 0.8), 1.2 * S, 1.2 * S);
       }
     }
     if (def.clouds) {
@@ -269,7 +281,8 @@ export function getPlanetTexture(classId) {
       g.globalAlpha = def.clouds * 0.5;
       for (let i = 0; i < 26; i++) {
         g.beginPath();
-        g.ellipse(rng.range(0, W), rng.range(0, H), rng.range(8, 30), rng.range(2, 6), 0, 0, Math.PI * 2);
+        g.ellipse(rng.range(0, W), rng.range(0, H),
+          rng.range(8, 30) * S, rng.range(2, 6) * S, 0, 0, Math.PI * 2);
         g.fill();
       }
       g.globalAlpha = 1;
@@ -280,9 +293,72 @@ export function getPlanetTexture(classId) {
   return c;
 }
 
+/** 云层贴图缓存（与地表贴图同一套尺寸口径；没有云的类别返回 null） */
+const cloudCache = new Map();
+
+/** 有云层图层的类别（3D 里额外叠一层会自己转的云） */
+export function hasClouds(classId) {
+  const def = planetClassDef(classId);
+  return !!(def.kind === 'terra' && def.clouds);
+}
+
+/**
+ * 云层贴图（2026-11-25 第二轮）：**透明底 + 白色云团**，贴在比球面大 1.02 倍的球壳上。
+ *
+ * 为什么需要它：地表贴图里其实已经画了白云（`def.clouds`），但那层云是**焊死在地表上**的
+ * —— 球一转，云跟着地形一起转，看起来像"石头上的白斑"。真实行星的云比地面转得快。
+ * 所以把云单独抽一层、给一个稍快的自转，近景立刻有"大气在动"的感觉。
+ *
+ * 与地表贴图同分辨率（512×256），并按类别确定性生成（同一类别每次一样）。
+ * @param {string} classId
+ * @returns {HTMLCanvasElement|null}
+ */
+export function getCloudTexture(classId) {
+  const cid = CLASS_IDS.has(classId) ? classId : PLANET_CLASSES[0].id;
+  const def = planetClassDef(cid);
+  if (!def.clouds) return null;
+  const hit = cloudCache.get(cid);
+  if (hit) return hit;
+  const W = 512;
+  const H = 256;
+  const rng = new SeededRng(hashString(`cloud:${cid}`));
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const g = c.getContext('2d');
+  // 🔴 第一版是"一团云 = 一个大椭圆 + 两个小椭圆"，近景看就是一颗颗**白点**
+  //    （截图上像撒了盐）。真实云是**软边的团块**：先给 canvas 挂一个模糊滤镜，
+  //    再用"一个簇 = 4~9 个低透明度小椭圆"叠出来 —— 边缘被模糊柔化，重叠处自然变厚。
+  //    `ctx.filter` 是 Chromium 支持的 2D 能力（一次性生成，不是每帧）。
+  g.filter = 'blur(6px)';
+  const clusters = Math.round(10 + def.clouds * 26);
+  for (let i = 0; i < clusters; i++) {
+    const cx = rng.range(0, W);
+    const cy = rng.range(0, H);
+    // 纬向分布：赤道（ITCZ）与中纬多、极区少 —— 均匀撒会像"随机白斑"
+    const lat = Math.abs((cy / H) * 2 - 1);
+    if (rng.next() > (lat < 0.25 ? 1 : lat < 0.7 ? 0.75 : 0.35)) continue;
+    const r = (16 + rng.next() * 44) * (1 - lat * 0.4);
+    const puffs = 4 + Math.round(rng.next() * 5);
+    for (let k = 0; k < puffs; k++) {
+      g.fillStyle = `rgba(255,255,255,${0.05 + rng.next() * 0.10})`;
+      g.beginPath();
+      g.ellipse(
+        cx + rng.range(-r, r), cy + rng.range(-r * 0.55, r * 0.55),
+        r * rng.range(0.3, 0.62), r * rng.range(0.16, 0.34), 0, 0, Math.PI * 2,
+      );
+      g.fill();
+    }
+  }
+  g.filter = 'none';
+  cloudCache.set(cid, c);
+  return c;
+}
+
 /** 仅测试/诊断用：清空纹理缓存（正常流程不清，纹理常驻对 3D 观景是收益）。 */
 export function __clearTextureCache() {
   textureCache.clear();
+  cloudCache.clear();
   discCache.clear();
 }
 
@@ -291,9 +367,6 @@ export function __clearTextureCache() {
 // 为什么要它：`SystemDetailView` 原先每颗行星是一个纯色圆点（7px），一堆行星长得一模一样，
 // 与原型“下钻恒星系视图”差着一整个美术层（`refs/src/sp1025-system-drilldown.png`）。
 const discCache = new Map();
-
-/** 贴图取样高度（等距圆柱的赤道带；取太高会把极区压扁） */
-const DISC_TEX_BAND = 64;
 
 /**
  * 行星圆盘 sprite（带光照/边缘大气），**按 (类别, 像素档) 缓存**。
@@ -327,7 +400,7 @@ export function getPlanetDisc(classId, px = 48) {
 
   // 贴图：取赤道带一块铺满圆盘（等价于"正面"）
   const tex = getPlanetTexture(cid);
-  g.drawImage(tex, 0, (tex.height - DISC_TEX_BAND) / 2, tex.width, DISC_TEX_BAND, 0, 0, S, S);
+  g.drawImage(tex, 0, (tex.height - tex.height / 2) / 2, tex.width, tex.height / 2, 0, 0, S, S);
 
   // 球面光照：左上受光、右下入影（与 3D 观景同侧，切视图不"翻灯"）
   const shade = g.createRadialGradient(R * 0.62, R * 0.58, R * 0.08, R, R, R * 1.02);

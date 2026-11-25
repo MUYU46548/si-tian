@@ -436,6 +436,57 @@ async function main() {
     return 'ok';
   });
 
+  check('a14 卫星也有大气（薄一档）+ 有云类别/无云类别分得开', () => {
+    const sc = S.buildSystem3dScene(baseInput());
+    const p3 = sc.bodies.find((b) => b.id === 'p3');
+    assert(p3 && p3.moons.length === 2, '缺卫星样本');
+    for (const m of p3.moons) {
+      assert(m.atmo && typeof m.atmo === 'object', `${m.id} 没有大气 —— 3D 里还是一颗灰球`);
+      assert(/^#[0-9a-fA-F]{6}$/.test(m.atmo.color), `${m.id} 大气色不合法`);
+      assert(m.atmo.strength > 0, `${m.id} 卫星大气强度为 0`);
+      // 薄一档：必须真的比同类行星薄，而且下限还得看得见
+      const planetSame = P.atmosphereForClass(m.classId);
+      assert(m.atmo.strength < planetSame.strength,
+        `${m.id} 的大气（${m.atmo.strength}）不比同类行星（${planetSame.strength}）薄`);
+      assert(Math.abs(m.atmo.strength - planetSame.strength * S.SYS3D_GEOM.moonAtmoScale) < 1e-9,
+        `${m.id} 的大气没有走 moonAtmoScale（两套口径会漂移）`);
+    }
+    // 云：terra 且 clouds>0 才有；气巨/死星系没有（气巨的云是条带，不叠第二层）
+    assert(P.hasClouds('ocean') === true, '海洋星球应该有云层');
+    assert(P.hasClouds('gaia') === true, '盖亚星球应该有云层');
+    assert(P.hasClouds('barren') === false, '荒芜星球不该有云层');
+    assert(P.hasClouds('machine') === false, '机械星球不该有云层');
+    assert(P.hasClouds('gasGiant') === false, '气态巨行星不该叠第二层云');
+    assert(typeof P.getCloudTexture === 'function', '缺 getCloudTexture');
+    return `${p3.moons.length} 颗卫星都有大气（×${S.SYS3D_GEOM.moonAtmoScale}）`;
+  });
+
+  check('a15 贴图分辨率：512×256 且构图按同一套系数缩放（不是"换了张图"）', () => {
+    // 纹理本身要在浏览器里画（document.createElement），Node 里拿不到 —— 这里守**口径**：
+    // ① 宽高常数是 512×256；② 所有特征尺寸都乘了同一个缩放系数 S；③ 圆盘取样按贴图高度取一半。
+    const src = read('src/renderer/src/utils/planetArt.js');
+    assert(/const W = 512;\s*\n\s*const H = 256;/.test(src), '地表贴图不是 512×256');
+    assert(/const S = W \/ 256;/.test(src), '缺少与旧 256 版对齐的缩放系数 S');
+    for (const needle of ['rng.range(6, 30) * S', 'rng.range(4, 16) * S', '(1 + rng.next() * 1.5) * S',
+      'const step = 16 * S', '1.2 * S']) {
+      assert(src.includes(needle), `特征尺寸没跟着缩放：缺 ${needle}`);
+    }
+    assert(src.includes('tex.height / 2'), '2D 圆盘的赤道取样带没跟着贴图高度走（会取到极区）');
+    return 'ok';
+  });
+
+  check('b5 源码闸门：卫星不许再是纯色灰球，云层要真的叠上去且自己转', () => {
+    const src = codeOnly(read('src/renderer/src/components/System3DView.vue'));
+    assert(src.includes('getPlanetTexture(moon.classId)'), '卫星没有用地表贴图（还是一颗纯色灰球）');
+    assert(!/new THREE\.MeshLambertMaterial\(\{ color: 0xb8b4ac \}\)/.test(src),
+      '还留着"卫星 = 灰球"的老写法');
+    assert(src.includes("body.kind === 'planet' ? getCloudTexture(body.classId) : null"),
+      '云层没接（或没排除空间站）');
+    assert(src.includes('o.clouds.rotation.y +='), '云层没有自转（云跟地形一起死转就没意义了）');
+    assert(src.includes('moonAtmoMats'), '缺卫星大气的计数（判据 A2 读它）');
+    return 'ok';
+  });
+
   let failed = 0;
   for (const r of results) {
     if (!r.ok) failed += 1;

@@ -42,6 +42,8 @@ export const SYS3D_GEOM = {
   stationSize: 0.38,
   moonSize: 0.16,
   maxBodies: 64,
+  /** 卫星大气相对同类行星的厚度系数（卫星小、引力弱，气层看着本来就该薄一档） */
+  moonAtmoScale: 0.55,
 };
 
 /** 类别关键字表：按顺序匹配，先命中先赢（"气态巨行星"必须排在"巨行星"之前） */
@@ -229,10 +231,14 @@ export function buildSystem3dScene(input = {}) {
       ring: classId === 'gasGiant' || classId === 'iceGiant',
       moons: moonNodes.map((m, mi) => {
         const mKey = m.id || `${key}-moon-${mi}`;
+        const mClassId = planetClassForNode(m, { fallbackLayer: 'moon' });
+        const mAtmo = atmosphereForClass(mClassId);
         return {
           id: mKey,
           name: m.displayName || m.name || '卫星',
-          classId: planetClassForNode(m, { fallbackLayer: 'moon' }),
+          classId: mClassId,
+          // 2026-11-25 第二轮：卫星也有大气，但**薄一档**（用户："卫星仍然没有大气"）
+          atmo: { ...mAtmo, strength: mAtmo.strength * SYS3D_GEOM.moonAtmoScale },
           orbit: SYS3D_GEOM.planetBaseSize * sizeScale + 0.75 + mi * 0.45,
           size: SYS3D_GEOM.moonSize * (0.85 + unit(`msize:${mKey}`) * 0.4),
           phase: unit(`mphase:${mKey}`) * Math.PI * 2,

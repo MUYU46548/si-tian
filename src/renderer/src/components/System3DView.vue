@@ -72,7 +72,8 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import Icon from './Icon.vue';
 import {
-  PLANET_CLASSES, SeededRng, atmosphereForClass, getPlanetTexture, hashString, hexAlpha, planetClassLabel,
+  PLANET_CLASSES, SeededRng, atmosphereForClass, getCloudTexture, getPlanetTexture,
+  hashString, hexAlpha, planetClassLabel,
 } from '../utils/planetArt.js';
 import { SYS3D_QUALITY, nextQualityLevel } from '../utils/system3dScene.js';
 
@@ -179,8 +180,12 @@ const starPivots = [];
  * 二是给 `stats.atmospheres` 计数 —— 判据「每颗行星都得有大气」要读得到数。
  */
 const atmoMats = [];
+/** 其中属于卫星的那些（判据要分开数：行星数 / 卫星数各有一条） */
+const moonAtmoMats = [];
 /** 日冕材质（每帧慢转：静止的放射光针看着像贴纸） */
 const coronaMats = [];
+/** 云层网格（每帧比地表多转一点：云不该跟地形一起死转） */
+const cloudMeshes = [];
 /** 大气强度总系数（排障口可改；0 = 全关） */
 let atmoScale = 1;
 /** 大气壳层半径 = 行星半径 × 这个倍数（1.22 → 光晕向外延伸约 22% 半径；量过 1.18 只剩 ~1.10R） */
@@ -233,6 +238,11 @@ const stats = {
   atmospheres: 0,
   planets: 0,
   atmoScale: 1,
+  // 第二轮：卫星大气 / 云层（卫星的大气薄一档，单独计数）
+  moonAtmospheres: 0,
+  moons: 0,
+  clouds: 0,
+  coronaScale: 1,
 };
 
 function track(d) {
@@ -687,12 +697,30 @@ function buildScene() {
     if (body.atmo) {
       const shellR = body.size * ATMO_SHELL;
       atmoMat = makeAtmosphereMaterial(body.atmo.color, body.atmo.strength, body.size, shellR);
+      atmoMat.userData.bodyId = body.id;   // 反向探针要能只关这一颗
       // 壳层段数不必很高（光晕是着色器算的、不吃几何），但轮廓是几何 → 32×22 不肉
       const atmoGeo = new THREE.SphereGeometry(shellR, 32, 22);
       const atmo = new THREE.Mesh(track(atmoGeo), track(atmoMat));
       atmo.renderOrder = 2;      // 透明层：行星之后画，只留轮廓外那一圈
       holder.add(atmo);
       atmoMats.push(atmoMat);
+    }
+    // 云层（2026-11-25 第二轮）：比球面大 2% 的**半透明白云壳**，自转比地表快一档。
+    // 以前云是画在地表贴图里的 —— 球一转，云跟地形一起转，看着像"石头上的白斑"。
+    // 只有 terra 且 `def.clouds > 0` 的类别有（气巨的云本来就是条带，不再叠）。
+    let cloudMesh = null;
+    const cloudCanvas = body.kind === 'planet' ? getCloudTexture(body.classId) : null;
+    if (cloudCanvas) {
+      const cTex = new THREE.CanvasTexture(cloudCanvas);
+      cTex.encoding = THREE.sRGBEncoding;
+      track(cTex);
+      const cGeo = new THREE.SphereGeometry(body.size * 1.02, 40, 28);
+      // 不写深度、稍后画：远半球的云被行星本体挡掉，只留正面那层
+      const cMat = new THREE.MeshLambertMaterial({ map: cTex, transparent: true, depthWrite: false });
+      cloudMesh = new THREE.Mesh(track(cGeo), track(cMat));
+      cloudMesh.rotation.z = body.tilt;
+      holder.add(cloudMesh);
+      cloudMeshes.push(cloudMesh);
     }
     // E1：这颗球可被点中（射线检测只认这一份清单）
     pickables.push({ mesh, mat, body, atmoMat });
@@ -714,8 +742,13 @@ function buildScene() {
 
     const moonPivots = [];
     for (const moon of body.moons) {
-      const mGeo = new THREE.SphereGeometry(moon.size, 12, 8);
-      const mMat = new THREE.MeshLambertMaterial({ color: 0xb8b4ac });
+      // 2026-11-25 第二轮：卫星不再是一颗灰球 —— 用地表美术库的同一套类别贴图
+      //（`barren`/`frozen` 两种），段数 12×8 → 20×14（近景才不是多面体）。
+      const mTex = new THREE.CanvasTexture(getPlanetTexture(moon.classId));
+      mTex.encoding = THREE.sRGBEncoding;
+      track(mTex);
+      const mGeo = new THREE.SphereGeometry(moon.size, 20, 14);
+      const mMat = new THREE.MeshLambertMaterial({ map: mTex });
       const mMesh = new THREE.Mesh(track(mGeo), track(mMat));
       mMesh.position.set(moon.orbit, 0, 0);
       const mp = new THREE.Object3D();
@@ -723,6 +756,19 @@ function buildScene() {
       mp.add(mMesh);
       // 卫星挂在母行星的**位置节点**上：公转时跟着走，但不吃行星自转
       holder.add(mp);
+
+      // 卫星的大气（比同类行星薄一档：SYS3D_GEOM.moonAtmoScale）
+      if (moon.atmo) {
+        const mShellR = moon.size * ATMO_SHELL;
+        const mAtmoMat = makeAtmosphereMaterial(moon.atmo.color, moon.atmo.strength, moon.size, mShellR);
+        const mAtmoGeo = new THREE.SphereGeometry(mShellR, 20, 14);
+        const mAtmo = new THREE.Mesh(track(mAtmoGeo), track(mAtmoMat));
+        mAtmo.renderOrder = 2;
+        mMesh.add(mAtmo);
+        mAtmoMat.userData.bodyId = moon.id;
+        atmoMats.push(mAtmoMat);
+        moonAtmoMats.push(mAtmoMat);
+      }
 
       const mPts = [];
       for (let k = 0; k < 48; k++) {
@@ -735,7 +781,7 @@ function buildScene() {
       moonPivots.push({ pivot: mp, speed: moon.speed });
     }
 
-    orbits.push({ pivot, mesh, speed: body.speed, moonPivots });
+    orbits.push({ pivot, mesh, speed: body.speed, moonPivots, clouds: cloudMesh });
 
     // 名称标签（DOM 投影：比 Sprite + CanvasTexture 省一份纹理，且中文字形清楚）
     const el = document.createElement('div');
@@ -859,8 +905,12 @@ function buildScene() {
   stats.labels = labels.length;
   // 验收判据（2026-11-25）：「每颗行星都要有大气」= 壳层数必须等于行星数。
   // 以前 3D 里一颗都没有 —— 用户说的"很多行星根本没有大气"就是这个。
-  stats.atmospheres = atmoMats.length;
+  // 卫星的大气单独计数（薄一档，判据 A2 用），别混进行星那一栏。
+  stats.moonAtmospheres = moonAtmoMats.length;
+  stats.atmospheres = atmoMats.length - moonAtmoMats.length;
   stats.planets = spec.bodies.filter((b) => b.kind === 'planet').length;
+  stats.moons = spec.bodies.reduce((n, b) => n + b.moons.length, 0);
+  stats.clouds = cloudMeshes.length;
   // E5：初始就在最高档（不预设降档 —— 用户机器够快就不该看到任何变化）
   stats.quality = { level: qualityLevel, pixelRatio: renderer ? renderer.getPixelRatio() : null, avgFrameMs: 0 };
 }
@@ -879,6 +929,7 @@ function animate() {
     for (const o of orbits) {
       o.pivot.rotation.y += o.speed * dt;
       o.mesh.rotation.y += 0.25 * dt;
+      if (o.clouds) o.clouds.rotation.y += 0.33 * dt;   // 云比地表转得快一点
       for (const mp of o.moonPivots) mp.pivot.rotation.y += mp.speed * dt;
     }
     for (const s of starPivots) s.pivot.rotation.y += s.speed * dt;
@@ -958,7 +1009,9 @@ function disposeAll() {
   // E3/E5：伴星 pivot 与降档状态也归零（重开 3D 从最高档开始）
   starPivots.length = 0;
   atmoMats.length = 0;
+  moonAtmoMats.length = 0;
   coronaMats.length = 0;
+  cloudMeshes.length = 0;
   atmoScale = 1;
   beltMesh = null;
   qualityLevel = 'high';
@@ -1174,15 +1227,25 @@ function listBodies() {
  * 大气强度总系数（**验收的反向探针**用）：0 = 全关，1 = 正常。
  * 判据是"关掉之后行星轮廓外那圈亮度必须掉下来"—— 没有这个口就没法证明
  * 截图里那圈光真的是大气壳层画的，而不是背景星云碰巧亮在那里。
+ *
+ * @param {number} k 0~2
+ * @param {string} [onlyId] 只改这一颗（天体 id）。**验收必须用它**：
+ *   画面里还有别的行星/卫星，全局关掉会让它们的轮廓也一起变，判据就成了假红
+ *   （2026-11-25 第二轮，卫星刚加上就把判据 C 顶红了）。
  */
-function setAtmosphereScale(k) {
+function setAtmosphereScale(k, onlyId) {
   const v = Number(k);
-  atmoScale = Number.isFinite(v) ? Math.max(0, Math.min(2, v)) : 1;
+  const scale = Number.isFinite(v) ? Math.max(0, Math.min(2, v)) : 1;
+  const target = onlyId ? String(onlyId) : '';
   for (const m of atmoMats) {
-    m.uniforms.uStrength.value = (m.userData.baseStrength || 0) * atmoScale;
+    if (target && m.userData.bodyId !== target) continue;
+    m.uniforms.uStrength.value = (m.userData.baseStrength || 0) * scale;
   }
-  stats.atmoScale = atmoScale;
-  return atmoScale;
+  if (!target) {
+    atmoScale = scale;
+    stats.atmoScale = atmoScale;
+  }
+  return scale;
 }
 
 /**

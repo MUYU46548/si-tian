@@ -18,6 +18,8 @@
 | # | 判据 | 口径 |
 |---|---|---|
 | A | 每颗行星都有大气壳层 | `stats.atmospheres == stats.planets > 0` |
+| A2 | 每颗**卫星**也有大气（薄一档） | `stats.moonAtmospheres == stats.moons`（卫星是跑前加进 mock 的） |
+| A3 | 云层真的叠上了 | `stats.clouds >= 1`（terra 类才叠） |
 | B | 行星轮廓**外**一圈真的亮起来了 | 聚焦一颗行星，环带 1.06R~1.18R 的平均亮度 − 关掉大气后同一环带 > 6 |
 | C | **反向探针**：只改轮廓外那一圈 | 开着/关掉两张逐像素比：明显变化（≥8）的像素 ≥90% 落在 0.95R~1.35R，且 1.6R 以外**一个像素都不许变** |
 | D | 恒星有日冕光针（不是一团对称的雾） | 1.3R~2.2R 环带的**角向变异系数** ≥ 0.10，且 ≥ 2.5× 同一张图上 6R~8R 背景环的变异系数 |
@@ -235,6 +237,42 @@ def diff_localization(img_a, img_b, cx, cy, r, box_mul=2.0, hot=8.0):
     }
 
 
+def add_moon_to_mock(mock_dir):
+    """往 mock 数据里加一颗卫星（判据 A2 要有真卫星才验得了）。
+
+    为什么动 mock 数据、不动产品代码：合成 fixture 里 **0 颗卫星**，而"卫星也要有大气"
+    这条判据没有卫星就永远测不到。mock 是本轮临时目录、跑完 `teardown_mock()` 就删，
+    改它不影响任何真实数据。
+    """
+    path = os.path.join(mock_dir, 'geodata.json')
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding='utf-8') as fh:
+        d = json.load(fh)
+    nodes = d.get('nodes') or []
+    host = next((n for n in nodes if n.get('layer') == 'planet'), None)
+    if not host:
+        return None
+    coord = host.get('coordinate') or {'x': 0, 'y': 0}
+    moon = {
+        'id': f"{host['id']}-a",
+        'name': f"{host['name']}甲",
+        'displayName': f"{host['name']}甲",
+        'layer': 'moon',
+        'layerLabel': '卫星',
+        'parentId': host['id'],
+        'tags': [f"{host['name']}甲", '卫星'],
+        # 2D 布局要坐标（3D 不用，但同一份数据两边都得能开）
+        'coordinate': {'x': coord.get('x', 0) + 40, 'y': coord.get('y', 0) + 24},
+        'wikilinks': [],
+    }
+    nodes.append(moon)
+    d['nodes'] = nodes
+    with open(path, 'w', encoding='utf-8') as fh:
+        json.dump(d, fh, ensure_ascii=False)
+    return moon
+
+
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     try:
@@ -248,6 +286,11 @@ def main():
     try:
         print('1/6 注入 mock 数据…')
         rt.setup_mock()
+        moon = add_moon_to_mock(rt.MOCK_DATA_DIR)
+        if moon:
+            print(f'   · 加了一颗卫星进 mock：{moon["name"]}（判据 A2 要它）')
+        else:
+            print('   ⚠️ 没加上卫星 —— A2 这条会跳过（不是产品结论）')
 
         print('2/6 启动 Vite…')
         rt.free_port(rt.DEV_PORT)
@@ -336,6 +379,24 @@ def main():
         })
         print(f"   A 每颗行星都有大气：atmospheres={atmo_n} planets={planet_n} → {'✅' if ok_a else '❌'}")
 
+        # ── 判据 A2/A3：卫星大气与云层（2026-11-25 第二轮）──────────────
+        moon_atmo = stats.get('moonAtmospheres')
+        moon_n = stats.get('moons')
+        cloud_n = stats.get('clouds')
+        ok_a2 = bool(moon_n) and moon_atmo == moon_n
+        ok_a3 = bool(cloud_n) and cloud_n >= 1
+        report['checks'].append({
+            'id': 'A2', 'ok': ok_a2,
+            'detail': f'moonAtmospheres={moon_atmo} moons={moon_n}',
+        })
+        report['checks'].append({
+            'id': 'A3', 'ok': ok_a3,
+            'detail': f'clouds={cloud_n} planets={planet_n}',
+        })
+        print(f"   A2 每颗卫星也有大气：moonAtmospheres={moon_atmo} moons={moon_n} → {'✅' if ok_a2 else '❌'}"
+              + ('' if moon_n else '（mock 里没卫星，跳过）'))
+        print(f"   A3 云层叠上了：clouds={cloud_n}（行星 {planet_n}）→ {'✅' if ok_a3 else '❌'}")
+
         # ── 近景：拉近一档再拍（**必须在 focusBody 之前**：focusBody 会把相机拉到
         #     minDistance=4，之后再 zoomTo 会被夹回同一个距离 → 两张图字节相同）。
         cdp.eval(_s3d("try { ex.zoomTo(2.2); } catch (e) {}\nreturn 1;"))
@@ -376,18 +437,26 @@ def main():
         print(f"   采样几何（拍完那一帧）：cx={rect_on['pageCx']:.1f} cy={rect_on['pageCy']:.1f} "
               f"r={rect_on['pageR']:.1f}")
 
-        # ── 反向探针：关掉大气，同一机位再拍 ──────────────────────────
+        # ── 反向探针：只关**这一颗**行星的大气，同一机位再拍 ─────────────
+        # ⚠️ 不能全局关：画面里还有别的行星和一颗卫星，它们的轮廓也会合法地变，
+        #    判据 C 就成了假红（2026-11-25 第二轮，加了卫星之后当场红）。
         scaled = jget(cdp, _s3d("""
-          const v = ex.setAtmosphereScale(0);
+          const v = ex.setAtmosphereScale(0, '%s');
           return JSON.stringify({ fails: [], scale: v });
-        """), desc='关掉大气')
-        print(f"   反向探针：setAtmosphereScale(0) → {scaled.get('scale')}")
+        """ % focus.get('id')), desc='关掉这颗行星的大气')
+        print(f"   反向探针：setAtmosphereScale(0, {focus.get('id')}) → {scaled.get('scale')}")
         time.sleep(0.5)
         shots.append(shoot(cdp, 'system3d-planet-off'))
 
         # 近景（拉近看整体：恒星日冕 / 轨道线 / 行星）—— 上面已经拍过，这里只恢复大气
-        cdp.eval(_s3d("try { ex.setAtmosphereScale(1); } catch (e) {}\nreturn 1;"))
+        cdp.eval(_s3d("try { ex.setAtmosphereScale(1, '%s'); } catch (e) {}\nreturn 1;" % focus.get('id')))
         time.sleep(0.3)
+
+        # 卫星近景：镜头退到 12× 行星半径 —— 行星占 ~75px、卫星在 1.3 世界单位外（约 157px），
+        # 两个都在画面里。3 倍档不行：那是绕着**恒星**放大，行星早就出框了。
+        cdp.eval(_s3d("try { ex.focusBody('%s', 12); } catch (e) {}\nreturn 1;" % focus.get('id')))
+        time.sleep(0.8)
+        shots.append(shoot(cdp, 'system3d-moons'))
 
         # ── 判据 B/C：像素环带 + 差异定位 ────────────────────────────
         img_on = Image.open(os.path.join(OUT_DIR, 'system3d-planet.png')).convert('RGB')

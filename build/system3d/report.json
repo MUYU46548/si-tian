@@ -6,19 +6,29 @@
       "detail": "atmospheres=2 planets=2"
     },
     {
+      "id": "A2",
+      "ok": true,
+      "detail": "moonAtmospheres=1 moons=1"
+    },
+    {
+      "id": "A3",
+      "ok": true,
+      "detail": "clouds=2 planets=2"
+    },
+    {
       "id": "B",
       "ok": true,
-      "detail": "halo_on=106.38 halo_off=82.48 gain=23.90 (>= 6.0)"
+      "detail": "halo_on=108.68 halo_off=86.40 gain=22.28 (>= 6.0)"
     },
     {
       "id": "C",
       "ok": true,
-      "detail": "hot=27710 环内占比=1.000 (>= 0.90) 轮廓外最大差=0.0 (<= 0)"
+      "detail": "hot=27440 环内占比=1.000 (>= 0.90) 轮廓外最大差=0.0 (<= 0)"
     },
     {
       "id": "D",
       "ok": true,
-      "detail": "corona mean_diff=12.69 (>= 1.5) cv_diff=0.586 (>= 0.35)"
+      "detail": "corona mean_diff=12.60 (>= 1.5) cv_diff=0.582 (>= 0.35)"
     }
   ],
   "shots": [
@@ -26,39 +36,43 @@
     "system3d-current-nocorona.png",
     "system3d-close.png",
     "system3d-planet.png",
-    "system3d-planet-off.png"
+    "system3d-planet-off.png",
+    "system3d-moons.png"
   ],
   "pixels": {
     "r": 140.27,
-    "halo_on": 106.38,
-    "halo_off": 82.48,
-    "gain": 23.9,
-    "hot": 27710,
-    "hot_in_rim": 27710,
+    "halo_on": 108.68,
+    "halo_off": 86.4,
+    "gain": 22.28,
+    "hot": 27440,
+    "hot_in_rim": 27440,
     "rim_fraction": 1.0,
     "max_diff_outside": 0.0
   },
   "corona": {
     "r": 62.97,
-    "mean_diff": 12.69,
-    "cv_diff": 0.586
+    "mean_diff": 12.6,
+    "cv_diff": 0.582
   },
   "stats": {
-    "geometries": 10,
-    "textures": 6,
+    "geometries": 15,
+    "textures": 9,
     "memoryAtDispose": null,
-    "disposed": 34,
-    "frames": 269,
+    "disposed": 47,
+    "frames": 263,
     "labels": 2,
     "error": "",
     "atmospheres": 2,
     "planets": 2,
     "atmoScale": 1,
+    "moonAtmospheres": 1,
+    "moons": 1,
+    "clouds": 2,
+    "coronaScale": 1,
     "quality": {
       "level": "high",
       "pixelRatio": 1,
       "avgFrameMs": 0
-    },
-    "coronaScale": 1
+    }
   }
 }
