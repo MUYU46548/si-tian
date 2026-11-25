@@ -114,14 +114,12 @@ def main():
         ws = find_page_ws(PORT, prefer_prefix='file:///', timeout=30)
         cdp = CDP(ws_url=ws)
 
-        # 等页面就绪（boot() 里最后打的标志）
+        # 等页面就绪：用 `window.__BOOT_OK`（机器可读），不读日志文本
+        # （2026-11-25 的教训：读文本判据被"往 boot 加一句日志"弄坏）
         ready = False
         for _ in range(60):
-            v = cdp.eval("(() => { const l=document.getElementById('log'); "
-                         "return l && /就绪|失败/.test(l.textContent) ? l.textContent.slice(-160) : ''; })()")
-            if v:
-                print(f'页面：{v}')
-                ready = '就绪' in v
+            if cdp.eval("!!window.__BOOT_OK") is True:
+                ready = True
                 break
             time.sleep(0.5)
         if not ready:
@@ -129,6 +127,7 @@ def main():
             v = cdp.eval("document.getElementById('log').textContent")
             print(v[-800:] if isinstance(v, str) else v)
             return 1
+        print('页面就绪')
 
         # 数据规模
         counts = cdp.eval("JSON.stringify(SCENE_DATA && SCENE_DATA.counts || null)")

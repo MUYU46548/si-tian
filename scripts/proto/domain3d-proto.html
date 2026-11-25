@@ -218,7 +218,22 @@ function makeDomainFixture(opts = {}) {
     pts.push({ x: Math.cos(t) * radius * 1.02 * wob, y: Math.sin(t) * radius * 1.02 * wob });
   }
 
-  return { domain: { id: 'd31', name: '原型星域' }, stars, hyperlanes: lanes, borders: [{ points: pts }], radius };
+  // 势力色（2026-11-25 补）：参考图 `refs/src/星域视图1.jpg` 里领土是**半透明色块、
+  // 颜色随势力**（蓝 / 青 / 绿 / 紫 / 红各不相同）。原型原来固定金色，那是"一条边"，不是"一片领土"。
+  // 色值抄 `galaxyLayout.js` 的默认势力配色族（与 2D 画布同口径，不自己编）。
+  // 正式实现里这个值来自 `resolveDomainColor(domain)`：preview 覆盖 > node.factionColor > 名字哈希。
+  // ⚠️ 这里取的是一个**中等饱和的青蓝**：参考图 `星域视图1.jpg` 里领土是青/蓝系，
+  //    而且要在"暗背景 + 0.14 不透明度"下仍然读得出是一片区域（太暗就成黑块）。
+  const factionColor = '#3d86c6';
+
+  // 星名（参考图：帝名是小字、字距大、白色，压在领土中央）
+  const starNames = stars.map((s) => s.name);
+
+  return {
+    domain: { id: 'd31', name: '原型星域', factionColor },
+    stars, hyperlanes: lanes, borders: [{ points: pts }], radius,
+    starNames,
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -295,10 +310,28 @@ function buildScene(fx) {
     return new Float32Array(arr);
   });
 
+  // bbox：标签挑选（按离中心远近）与相机取景都要用。
+  // 🔴 2026-11-25 漏了这个字段 → `buildStarLabels` 里 `sc.bbox.minX` 抛 TypeError，
+  //    而 boot 是裸调用、异常被静默吞掉，页面只停在第三条日志。补上，并且给默认值兜底。
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (let i = 0; i < fx.stars.length; i++) {
+    const x = pos[i * 3], y = pos[i * 3 + 1];
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+  }
+  if (!Number.isFinite(minX)) {
+    minX = -fx.radius; maxX = fx.radius; minY = -fx.radius; maxY = fx.radius;
+  }
+
   return {
     ids, names, starPos: pos,
     lanePos: new Float32Array(lanePos),
     borders,
+    // 视野/取景/标签都要用：把 domain（含势力色）与 radius 一并带出去，
+    // 否则调用方只能从别处再摸一份（第一版就是这么漏的）。
+    domain: fx.domain,
+    radius: fx.radius,
+    bbox: { minX, minY, maxX, maxY },
     counts: {
       stars: fx.stars.length,
       laneSegments: lanePos.length / 6,
@@ -310,10 +343,145 @@ function buildScene(fx) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 3. three 初始化
+// 3b. 背景：星场 + 星云 + 亮核（观感：参考图 `星域视图1.jpg`）
+//
+// 参考图的"深空感"不是靠调色，是靠三层东西：
+//   ① **星场**：几千颗极暗的小点（恒星的 1/4 大小），给画面"颗粒感"；
+//   ② **星云**：大尺度、极低不透明度的色块（青/紫/暗红），让黑底不平；
+//   ③ **亮核**：银河中心的过曝亮团。
+//
+// 三层都是**纯背景**：它们不进命中、不进数据、不随相机平移（跟随相机旋转的只有远处天球）。
+// 实现上游：① 用 Points 一次画完（1 批）；② 用几个大 PlaneGeometry + 径向渐变贴图
+// 放在很远的地方（禁用 depthWrite）；③ 一个超大 sprite。
+//
+// ⚠️ 这里刻意**不复用 `composables/spaceBackground.js`**：那个是 2D canvas 版，
+//    输出的是屏幕空间位图；3D 需要的是"能随相机旋转的世界空间背景"。两者的数学不同。
+//    但配色族与它在同一套（冷蓝紫 + 淡青），避免"切到 3D 换了个天"。
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** 字段星星场：确定性撒点，只画远景，不进任何数据 */
+function buildStarfield(count, extent, rnd) {
+  const pos = new Float32Array(count * 3);
+  const col = new Float32Array(count * 3);
+  const c = new THREE.Color();
+  for (let i = 0; i < count; i++) {
+    // 撒在一个大球壳里（不是盒子里）—— 转到哪个角度都有星，不会看到"边"
+    const u = rnd();
+    const rr = extent * (0.55 + 0.45 * Math.cbrt(u));
+    const th = rnd() * Math.PI * 2;
+    const ph = Math.acos(2 * rnd() - 1);
+    pos[i * 3] = rr * Math.sin(ph) * Math.cos(th);
+    pos[i * 3 + 1] = rr * Math.sin(ph) * Math.sin(th);
+    pos[i * 3 + 2] = rr * Math.cos(ph);
+    // 亮度：多数很暗、少数亮（真实星场的分布是幂律不是均匀）
+    const b = 0.18 + 0.82 * Math.pow(rnd(), 2.6);
+    c.setHSL(0.55 + rnd() * 0.12, 0.25 * rnd(), b * 0.75);
+    col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const mat = new THREE.PointsMaterial({
+    size: extent * 0.0016, sizeAttenuation: true, vertexColors: true,
+    transparent: true, opacity: 0.9, depthWrite: false, depthTest: false,
+  });
+  const pts = new THREE.Points(geo, mat);
+  pts.frustumCulled = false;
+  pts.renderOrder = -100;      // 最先画，永远在最后面
+  return pts;
+}
+
+/** 星云贴图：一团软边色块（径向渐变 + 内部不均匀） */
+function makeNebulaTexture(seed) {
+  const S = 256;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const ctx = cv.getContext('2d');
+  const rnd = mulberry32(seed);
+  // 底色：一整块从中心向外的软衰减
+  const g = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+  g.addColorStop(0.0, 'rgba(255,255,255,0.55)');
+  g.addColorStop(0.35, 'rgba(255,255,255,0.22)');
+  g.addColorStop(0.7, 'rgba(255,255,255,0.06)');
+  g.addColorStop(1.0, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, S, S);
+  // 叠几团更小的浓淡，避免"一个完美的圆"（真实星云是不规则的）
+  for (let i = 0; i < 14; i++) {
+    const x = S / 2 + (rnd() - 0.5) * S * 0.8;
+    const y = S / 2 + (rnd() - 0.5) * S * 0.8;
+    const r = S * (0.06 + rnd() * 0.20);
+    const g2 = ctx.createRadialGradient(x, y, 0, x, y, r);
+    const a = 0.05 + rnd() * 0.10;
+    g2.addColorStop(0, `rgba(255,255,255,${a})`);
+    g2.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g2;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/** 背景三层（星场 + 星云 + 亮核），返回一个 Group */
+function buildBackground(radius) {
+  const g = new THREE.Group();
+  const extent = radius * 14;    // 背景球壳要远大于星域，否则相机一动就穿出去
+
+  // ① 星场：3000 颗
+  const rnd = mulberry32(20261125);
+  const sf = buildStarfield(3000, extent, rnd);
+  g.add(sf);
+  disposed.push(sf.geometry, sf.material, sf);
+
+  // ② 星云：4 团大色块，散在远处
+  //    配色抄 `spaceBackground.js` 的族：冷蓝 / 淡青 / 淡紫 / 暗红
+  const NEBULA_TINTS = [
+    { color: 0x2a4a7a, pos: [0.5, -0.7, 0.4], scale: 6.0 },   // 冷蓝
+    { color: 0x1f5f5a, pos: [-0.7, 0.3, 0.6], scale: 5.0 },   // 淡青
+    { color: 0x3a2a5a, pos: [0.2, 0.8, -0.5], scale: 5.5 },   // 淡紫
+    { color: 0x5a2a2a, pos: [-0.4, -0.5, -0.7], scale: 4.2 }, // 暗红
+  ];
+  NEBULA_TINTS.forEach((n, i) => {
+    const tex = makeNebulaTexture(20261125 + i * 31);
+    const mat = new THREE.SpriteMaterial({
+      map: tex, color: new THREE.Color(n.color),
+      transparent: true, opacity: 0.34,
+      blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
+    });
+    const sp = new THREE.Sprite(mat);
+    sp.position.set(n.pos[0] * extent, n.pos[1] * extent, n.pos[2] * extent);
+    sp.scale.setScalar(extent * n.scale * 0.5);
+    sp.renderOrder = -90;
+    g.add(sp);
+    disposed.push(tex, mat, sp);
+  });
+
+  // ③ 亮核：银河中心的一团过曝光（参考图正中间那块）
+  const coreTex = makeNebulaTexture(7777);
+  const coreMat = new THREE.SpriteMaterial({
+    map: coreTex, color: new THREE.Color(0xfff2d8),
+    transparent: true, opacity: 0.55,
+    blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
+  });
+  const core = new THREE.Sprite(coreMat);
+  core.position.set(0, 0, -extent * 0.85);
+  core.scale.setScalar(extent * 1.6);
+  core.renderOrder = -95;
+  g.add(core);
+  disposed.push(coreTex, coreMat, core);
+
+  return g;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 4. three 初始化
 // ═══════════════════════════════════════════════════════════════════════════
 let THREE, OrbitControls;
 let renderer, scene, camera, controls;
+let backgroundGroup = null;
 let batchedGroup = null, naiveGroup = null;
 let mode = 'batched';
 let disposed = [];
@@ -325,6 +493,105 @@ function makeStarGeometry() {
 // 注：曾有一个 `makeGlowTexture()`（给 Sprite 用的径向渐变贴图）。
 // v3 改成 `Points` + 自定义 shader 后不再需要 —— 渐变改在片元里用 `gl_PointCoord` 算，
 // 少一张贴图、少一次上传。删掉而不是留着，避免下次有人以为还得用它。
+
+/**
+ * 星名标签贴图（观感：参考图 `星域视图4.png` 量 —— 星名约 13px 白字、深色描边、字距略宽）。
+ *
+ * ## 为什么用 canvas 贴图而不是 TextGeometry
+ * TextGeometry 要加载字体文件（中文库体积极大），每个字还要转几何体。
+ * canvas 贴图：一次画好 → 当 sprite 用，中文随便写、零字体依赖、观感与 2D 画布一致。
+ * **代价**：每个标签一个 Sprite（不能合批）→ 必须做数量上限（见 buildStarLabels）。
+ *
+ * ## 与 2D 口径一致（`galaxy/labels.js`）
+ * 字体 `Segoe UI, system-ui, Microsoft YaHei, sans-serif` / 13px /
+ * 白 `rgba(255,255,255,0.96)` / 描边 `rgba(4,7,14,0.85)` 3px。
+ * 同一个名字在 2D 和 3D 里必须长得一样。
+ */
+function makeLabelTexture(text, opts) {
+  const fontPx = (opts && opts.fontPx) || 13;
+  const strokePx = Math.max(2, Math.round(fontPx * 0.23));
+  const pad = strokePx + 4;
+  const S = 2;   // 超采样
+  const cv = document.createElement('canvas');
+  const ctx = cv.getContext('2d');
+  const font = `${fontPx * S}px "Segoe UI", system-ui, "Microsoft YaHei", sans-serif`;
+  ctx.font = font;
+  const letterSpacing = fontPx * 0.06 * S;   // 字距略宽（参考图的星名不是紧排）
+  const chars = [...text];
+  let w = 0;
+  for (const ch of chars) w += ctx.measureText(ch).width + letterSpacing;
+  cv.width = Math.ceil(w + pad * 2 * S);
+  cv.height = Math.ceil((fontPx + 6) * S + pad * 2 * S);
+
+  const c2 = cv.getContext('2d');
+  c2.font = font;
+  c2.textBaseline = 'middle';
+  c2.lineJoin = 'round';
+  const y = cv.height / 2;
+  // 先描边（深色，让白字在亮背景上也读得出）
+  c2.strokeStyle = 'rgba(4,7,14,0.85)';
+  c2.lineWidth = strokePx * S;
+  let x = pad * S;
+  for (const ch of chars) { c2.strokeText(ch, x, y); x += c2.measureText(ch).width + letterSpacing; }
+  // 再填充
+  c2.fillStyle = 'rgba(255,255,255,0.96)';
+  x = pad * S;
+  for (const ch of chars) { c2.fillText(ch, x, y); x += c2.measureText(ch).width + letterSpacing; }
+
+  const tex = new THREE.CanvasTexture(cv);
+  tex.minFilter = THREE.LinearFilter;   // 不用 mipmap：文字缩小会糊
+  tex.magFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  tex.userData = { aspect: cv.width / cv.height };
+  return tex;
+}
+
+/**
+ * 星名标签组。**必须限数量**：每个标签一个 Sprite，不能合批。
+ *
+ * 取舍：参考图的远景确实不画标签（MANIFEST 记「远景不画航道、只留星点」），
+ * 所以这里按"离中心近的优先"挑前 N 个（默认 60），与 2D 的 podium 思路一致。
+ * 正式实现应改成"一张 canvas 画所有标签 + 一次 draw"（2D 就是这么干的），
+ * 或按视口裁剪到十几条；本原型用数量上限先守住 draw calls 判据。
+ */
+function buildStarLabels(sc, opts) {
+  const maxLabels = (opts && opts.maxLabels) || 60;
+  const g = new THREE.Group();
+  const cx = (sc.bbox.minX + sc.bbox.maxX) / 2;
+  const cy = (sc.bbox.minY + sc.bbox.maxY) / 2;
+  const idx = [];
+  for (let i = 0; i < sc.counts.stars; i++) {
+    idx.push({ i, d: Math.hypot(sc.starPos[i * 3] - cx, sc.starPos[i * 3 + 1] - cy) });
+  }
+  idx.sort((a, b) => a.d - b.d);
+  const pick = idx.slice(0, Math.min(maxLabels, idx.length));
+
+  for (const { i } of pick) {
+    const name = sc.names[i];
+    if (!name) continue;
+    const tex = makeLabelTexture(name, { fontPx: 13 });
+    const mat = new THREE.SpriteMaterial({
+      map: tex, transparent: true, depthWrite: false, depthTest: false,
+    });
+    const sp = new THREE.Sprite(mat);
+    // 🔴 2026-11-25 修：第一版 hWorld = STAR_RADIUS*8 = 48 世界单位，
+    //    在 900 半径的星域里只占 5%，屏幕上约 3px —— **读不清**（截图里就是一团小字）。
+    //    参考图 `星域视图4.png` 里星名约 13px（1920 宽下），相对星域直径约 1.4%。
+    //    这里按"星域半径的 9%"给高度，1280 宽视口下约 14px —— 与参考图同量级。
+    const hWorld = sc.radius * 0.09;
+    sp.scale.set(hWorld * (tex.userData.aspect || 4), hWorld, 1);
+    sp.position.set(
+      sc.starPos[i * 3],
+      sc.starPos[i * 3 + 1] + STAR_RADIUS * 6,
+      sc.starPos[i * 3 + 2],
+    );
+    sp.renderOrder = 10;
+    g.add(sp);
+    disposed.push(tex, mat, sp);
+  }
+  return g;
+}
+
 
 // ── 合批版：3 批 ─────────────────────────────────────────────────────────
 function buildBatched(sc) {
@@ -481,8 +748,11 @@ function buildBatched(sc) {
     }
     const fgeo = new THREE.BufferGeometry();
     fgeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(verts), 3));
+    // 填充色 = **势力色**（参考图 `星域视图1.jpg`：领土是一片半透明色块，颜色随势力）
+    // 原来固定用一个蓝，看起来"所有星域都是同一个国家"。
     const fmat = new THREE.MeshBasicMaterial({
-      color: new THREE.Color(BORDER_FILL), transparent: true, opacity: 0.20,
+      color: new THREE.Color(sc.domain.factionColor || BORDER_FILL),
+      transparent: true, opacity: 0.14,
       side: THREE.DoubleSide, depthWrite: false,
     });
     const fill = new THREE.Mesh(fgeo, fmat);
@@ -504,14 +774,28 @@ function buildBatched(sc) {
   // 在屏幕上"堆"出一条带宽。偏移量在世界_unit 里按边界半径缩放，
   // 这样近景是一条厚带、远景自动收成一条细线 —— 与群星的 LOD 观感一致。
   const borderLayers = [
-    // [向外偏移(占半径比例), 透明度, 颜色, z 抬高]
-    [0.030, 0.08, BORDER_GLOW, 0.10],
-    [0.018, 0.16, BORDER_GLOW, 0.20],
-    [0.009, 0.30, BORDER_GLOW, 0.30],
-    [0.003, 0.55, BORDER_GLOW, 0.40],
-    [0.000, 0.95, BORDER_INNER, 0.50],   // 内亮线：最后画、最亮
+    // [向外偏移(占半径比例), 透明度, 颜色键, z 抬高]
+    // 颜色键：'glow' = 势力色的暗一档、'inner' = 势力色的亮一档。
+    // （参考图 `星域视图1.jpg` 里边界与领土同族色，只是更亮/更暗，不是独立的金色）
+    [0.030, 0.08, 'glow', 0.10],
+    [0.018, 0.16, 'glow', 0.20],
+    [0.009, 0.30, 'glow', 0.30],
+    [0.003, 0.55, 'glow', 0.40],
+    [0.000, 0.95, 'inner', 0.50],   // 内亮线：最后画、最亮
   ];
-  for (const [offsetRatio, op, color, zLift] of borderLayers) {
+  // 势力色 → 边界用的亮/暗两档（同族色，不跳到金色，也别提成白色）
+  const factionCol = new THREE.Color(sc.domain.factionColor || BORDER_FILL);
+  const WHITE = new THREE.Color(0xffffff);
+  const colOf = (key) => {
+    const c = factionCol.clone();
+    // 🔴 2026-11-25 修：第一版 inner 往白里提 0.55 → 边界变成**白色**，
+    //    截图里整个星域像套了个白圈，势力色完全看不出来。
+    //    参考图里边界是"同族色的高亮"，不是白：只提 0.22，保住色相。
+    //    真正让它"发光"的是加色混合 + 高不透明度，不是把颜色洗白。
+    c.lerp(WHITE, key === 'inner' ? 0.22 : 0.06);
+    return c;
+  };
+  for (const [offsetRatio, op, colorKey, zLift] of borderLayers) {
     const segs = [];
     for (const b of sc.borders) {
       const n = b.length / 3;
@@ -539,13 +823,24 @@ function buildBatched(sc) {
     const geo4 = new THREE.BufferGeometry();
     geo4.setAttribute('position', new THREE.BufferAttribute(new Float32Array(segs), 3));
     const mat4 = new THREE.LineBasicMaterial({
-      color: new THREE.Color(color), transparent: true, opacity: op,
+      color: colOf(colorKey), transparent: true, opacity: op,
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
     const ln = new THREE.LineSegments(geo4, mat4);
     g.add(ln);
     disposed.push(geo4, mat4, ln);
   }
+
+  // ⑤ 星名标签（观感）：**默认关闭**，由 `setLabelsVisible(true)` 打开。
+  //
+  // 为什么默认关：标签每个是独立 Sprite，不能合批 —— 打开后 draw calls 会从 13 涨到 13+N。
+  // 而 N2 判据（<50）是**性能判据**，不该被观感件污染。
+  // 所以口径是：性能对照跑在"标签关闭"下；观感截图时打开标签。
+  // 正式实现里标签应该合批（一张 canvas 画完），那时就不需要这个开关。
+  const labelGroup = buildStarLabels(sc, { maxLabels: 60 });
+  labelGroup.visible = false;
+  g.add(labelGroup);
+  g.userData.labelGroup = labelGroup;
 
   return g;
 }
@@ -795,7 +1090,11 @@ async function boot() {
 
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x07090f);
-  scene.fog = new THREE.FogExp2(0x07090f, 0.00016);
+  // 🔴 雾必须去掉（2026-11-25）：第一版有 FogExp2，加入背景星场后，
+  //    雾会把 3000 颗背景星按距离吃掉 —— 远景星场变成一片均匀的灰，
+  //    看起来像"背景被洗淡了"，而不是深空。星场自己带亮度分布，不需要雾来压。
+  //    真正需要"远处更淡"的是星域里的恒星，那个由 shader 的 vFade 处理。
+  scene.fog = null;
 
   camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 30000);
   camera.position.set(0, -1500, 1200);
@@ -818,6 +1117,18 @@ async function boot() {
   const starCount = Math.max(1, Math.min(500, Number(qs.get('stars')) || 30));
   const fx = makeDomainFixture({ stars: starCount });
   SCENE_DATA = buildScene(fx);
+  // 背景三层（星场 / 星云 / 亮核）：用户 2026-11-25「继续做」后补的观感件。
+  // 放在"改观感"这一刀里，而不是等交互做完 —— 用户明确说先补观感。
+  // ⚠️ 包 try/catch：背景是**纯装饰**，它挂了不许把整个原型带崩（第一版就是这里抛错，
+  //    日志只停在上一条，看起来像"页面卡住了"）。出错要能看见原因。
+  try {
+    backgroundGroup = buildBackground(SCENE_DATA.radius);
+    scene.add(backgroundGroup);
+  } catch (err) {
+    backgroundGroup = null;
+    log('背景构建失败（不影响星域本体）：' + (err && err.message), 'err');
+    console.error(err);
+  }
   window.SCENE_DATA = SCENE_DATA;   // 探针要读 counts
   window.RESULT = RESULT;
   // 切换模式与测量入口也挂出去：探针不该模拟点按钮（按钮文案会改，DOM 会变）
@@ -853,6 +1164,22 @@ async function boot() {
       controls.update();
       renderer.render(scene, camera);
       return { calls: renderer.info.render.calls };
+    },
+    // 星名标签开关（见 buildBatched ⑤：默认关，避免污染性能判据）
+    setLabelsVisible: (v) => {
+      let n = 0;
+      if (batchedGroup && batchedGroup.userData.labelGroup) {
+        batchedGroup.userData.labelGroup.visible = !!v;
+        n = batchedGroup.userData.labelGroup.children.length;
+      }
+      renderer.render(scene, camera);
+      return { visible: !!v, labels: n, calls: renderer.info.render.calls };
+    },
+    // 背景开关（用于「有没有背景差别多大」的对照）
+    setBackgroundVisible: (v) => {
+      if (backgroundGroup) backgroundGroup.visible = !!v;
+      renderer.render(scene, camera);
+      return { visible: !!v };
     },
   };
   log(`数据：${SCENE_DATA.counts.stars} 恒星系 / ${SCENE_DATA.counts.laneSegments} 航道段 / ` +
@@ -924,10 +1251,23 @@ async function boot() {
     }
   }
   requestAnimationFrame(loop);
+  // 🔴 明确的就绪标志（2026-11-25 改）：原来外部工具靠**读日志文本**里的"就绪"二字判断，
+  //    后来往 boot 里加了背景/标签的日志，把那一行挤到了日志尾部之外，外部就永远"没就绪"。
+  //    判据不该依赖人类可读文本 —— 给一个机器可读的布尔量。
+  window.__BOOT_OK = true;
   log('就绪 —— 点"开始量"跑两轮对照', 'ok');
 }
 
-boot();
+// 🔴 boot 必须包错误捕获（2026-11-25）：
+//    原来 `boot()` 是裸调用，里面任何一步抛异常都会**静默死掉** ——
+//    页面看起来只是"卡在第三条日志"，外部工具只能报"没就绪"，拿不到任何原因。
+//    这里把异常打到 `window.__BOOT_ERR` 与日志里，让失败**可读**。
+boot().catch((err) => {
+  window.__BOOT_ERR = String((err && err.stack) || err);
+  try { log('启动失败：' + (err && err.message), 'err'); } catch (e) {}
+  console.error(err);
+});
+
 </script>
 </body>
 </html>

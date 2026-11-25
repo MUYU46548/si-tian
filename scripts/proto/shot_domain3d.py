@@ -171,14 +171,18 @@ def main():
         cdp = CDP(ws_url=find_page_ws(PORT, prefer_prefix='file:///', timeout=30))
 
         # 等就绪
+        # 🔴 用 `window.__BOOT_OK` 这个**机器可读**标志，不读日志文本。
+        #    原来读日志里有没有"就绪"两字 —— 往 boot 里加一句日志就可能把判断弄坏，
+        #    而且失败时没有可读原因（2026-11-25 就是这么卡住的）。
+        ok = False
         for _ in range(60):
-            v = cdp.eval("(() => { const l=document.getElementById('log'); "
-                         "return l && /就绪|失败/.test(l.textContent) ? 'ready' : ''; })()")
-            if v == 'ready':
+            if cdp.eval("!!window.__BOOT_OK") is True:
+                ok = True
                 break
             time.sleep(0.5)
-        else:
-            print('❌ 页面没就绪')
+        if not ok:
+            print('❌ 页面没就绪。日志：')
+            print(cdp.eval("document.getElementById('log').textContent")[-600:])
             return 1
         print(f'页面就绪（{stars} 恒星系）')
 
@@ -191,6 +195,15 @@ def main():
         # 底部日志条也会盖住画面下缘，截图时一并隐藏
         cdp.eval("(() => { const l=document.getElementById('log'); if(l) l.style.display='none'; return 1; })()")
         time.sleep(0.2)
+        # 🌟 拍**观感图**时把星名标签打开（性能对照不经这条路径，见 buildBatched ⑤）
+        lab = cdp.eval("(() => JSON.stringify(window.__proto.setLabelsVisible(true)))()")
+        if isinstance(lab, str):
+            try:
+                lab = json.loads(lab)
+            except ValueError:
+                lab = None
+        if isinstance(lab, dict):
+            print(f'星名标签已开：{lab.get("labels")} 条，draw calls {lab.get("calls")}')
 
         # 相机距离按"盘面占满视口"来定，不按恒星大小。
         # 恒星半径从 26 收到 6（用户：太大了）后，同样的机位会让恒星变成小点 ——
