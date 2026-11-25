@@ -560,6 +560,35 @@ async function main() {
     return 'ok';
   });
 
+  check('a18 本机配色库（B 前半段）：脏值不入库、同名同色去重、上限丢弃最旧', () => {
+    const store = new Map();
+    globalThis.window = { localStorage: {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => store.set(k, String(v)),
+    } };
+    const PL = require(path.join(ROOT, 'src', 'renderer', 'src', 'utils', 'planetPalettes.js'));
+    assert(PL.loadPresets().length === 0, '空库应返回空数组');
+    // 脏值：非法色一律被清掉，全空的不许存
+    assert(PL.hasAnyColor({ base: 'red', land: ['nope'] }) === false, '脏值被当成有效配色');
+    assert(PL.savePreset({ name: 'x', colors: { base: 'red' } }).ok === false, '全脏的配色不该入库');
+    const r1 = PL.savePreset({ name: '赤岩', classId: 'desert', colors: { base: '#7a3b2e', land: ['#a06a4a'] } });
+    assert(r1.ok && r1.list.length === 1, '存一套失败');
+    assert(r1.list[0].name === '赤岩' && r1.list[0].colors.base === '#7a3b2e', '内容不对');
+    // 同名同色去重（不新增）
+    const r2 = PL.savePreset({ name: '赤岩-改', colors: { base: '#7a3b2e', land: ['#a06a4a'] } });
+    assert(r2.list.length === 1 && r2.list[0].name === '赤岩-改', '同名同色应更新而不是新增');
+    // 上限：超过 MAX_PRESETS 丢最旧的
+    for (let i = 0; i < PL.MAX_PRESETS + 5; i++) {
+      PL.savePreset({ name: 'p' + i, colors: { base: '#00' + (10 + i).toString(16).padStart(4, '0') } });
+    }
+    assert(PL.loadPresets().length === PL.MAX_PRESETS, '上限没生效');
+    // 读坏了不许抛
+    store.set('sitian.planetPalettes.v1', '{not json');
+    assert(Array.isArray(PL.loadPresets()) && PL.loadPresets().length === 0, '坏数据应返回空数组而不是抛');
+    delete globalThis.window;
+    return 'ok';
+  });
+
   let failed = 0;
   for (const r of results) {
     if (!r.ok) failed += 1;

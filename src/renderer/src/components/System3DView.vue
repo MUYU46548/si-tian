@@ -32,6 +32,18 @@
         <input class="sys3d-color" type="color" data-testid="sys3d-color-atmo"
                :value="pickedColors.atmosphere" title="大气边光色" @input="onColor('atmosphere', $event)" />
       </label>
+      <label class="sys3d-card-row" title="我的配色（本机保存，跨项目可用；套用只影响这一颗）">
+        <span>配色</span>
+        <select data-testid="sys3d-preset" :value="''" @change="onApplyPreset">
+          <option value="">{{ presets.length ? '选一套…' : '（还没有）' }}</option>
+          <option v-for="p in presets" :key="p.id" :value="p.id">{{ p.name }}</option>
+        </select>
+      </label>
+      <label class="sys3d-card-row">
+        <input class="sys3d-preset-name" data-testid="sys3d-preset-name" v-model="presetName"
+               placeholder="配色名（可空）" />
+        <button class="sys3d-preset-save" data-testid="sys3d-preset-save" @click="onSavePreset">存为配色</button>
+      </label>
       <button class="sys3d-card-go" data-testid="sys3d-drill" @click="onDrill">
         进入行星地图 <Icon name="chevron-right" :size="12" />
       </button>
@@ -85,6 +97,7 @@ import {
   hashString, hexAlpha, paletteForClass, planetClassLabel,
 } from '../utils/planetArt.js';
 import { SYS3D_QUALITY, nextQualityLevel } from '../utils/system3dScene.js';
+import { loadPresets, savePreset } from '../utils/planetPalettes.js';
 
 const props = defineProps({
   // buildSystem3dScene() 的产物；父组件每次打开时现算
@@ -182,6 +195,41 @@ function onColor(slot, e) {
   }
   picked.value = { ...p, palette: colors };
   emit("set-colors", { id: p.id, colors });
+}
+
+/** 本机配色库（B 前半段）：跨项目可选的 DIY 配色；改动只作用在**当前这一颗** */
+const presets = ref(loadPresets());
+const presetName = ref("");
+
+/** 选中一套配色 → 套到当前这颗上（走与拾色器同一条 applyPalette + set-colors） */
+function onApplyPreset(e) {
+  const id = String((e && e.target && e.target.value) || "");
+  const p = picked.value;
+  if (!id || !p) return;
+  const hit = pickables.find((x) => x.body.id === p.id);
+  const preset = presets.value.find((x) => x.id === id);
+  if (!hit || !preset) return;
+  const colors = { ...(p.palette || {}), ...preset.colors };
+  hit.body.palette = colors;
+  applyPalette(hit, colors);
+  picked.value = { ...p, palette: colors };
+  emit("set-colors", { id: p.id, colors });
+}
+
+/** 把当前这颗的**完整配色**存进本机库（存的是覆盖补丁，不是整套类别定义） */
+function onSavePreset() {
+  const p = picked.value;
+  if (!p) return null;
+  const eff = paletteForClass(p.classId, p.palette);
+  const r = savePreset({
+    name: presetName.value || p.name,
+    classId: p.classId,
+    colors: { base: eff.base, cap: eff.cap, atmosphere: eff.atmosphere, land: eff.land },
+  });
+  presets.value = r.list;
+  presetName.value = "";
+  status.value = r.ok ? "已存为配色（本机，跨项目可用）" : "配色没存进去（浏览器存储被禁用？）";
+  return r;
 }
 
 /** 改类型：**当场换贴图/大气** + 落数据（planetClass 走父组件的 store 写口） */
@@ -1541,6 +1589,18 @@ defineExpose({
   padding: 0; border: 1px solid rgba(148, 163, 184, 0.45); border-radius: 4px;
   background: transparent; cursor: pointer;
 }
+.sys3d-preset-name {
+  flex: 1; min-width: 0;
+  background: #0f172a; color: #dbe4f3;
+  border: 1px solid rgba(148, 163, 184, 0.4); border-radius: 4px;
+  padding: 2px 6px; font-size: 12px;
+}
+.sys3d-preset-save {
+  border: 1px solid rgba(148, 163, 184, 0.45); border-radius: 4px;
+  background: rgba(30, 41, 59, 0.9); color: #dbe4f3;
+  padding: 3px 8px; font-size: 12px; cursor: pointer; white-space: nowrap;
+}
+.sys3d-preset-save:hover { background: rgba(51, 65, 85, 0.95); }
 .sys3d-card-go {
   display: inline-flex; align-items: center; justify-content: center; gap: 4px;
   border: 1px solid rgba(56, 189, 248, 0.55);
