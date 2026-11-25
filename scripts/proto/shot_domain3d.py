@@ -192,7 +192,11 @@ def main():
         cdp.eval("(() => { const l=document.getElementById('log'); if(l) l.style.display='none'; return 1; })()")
         time.sleep(0.2)
 
-        R = 900 if stars >= 50 else 900
+        # 相机距离按"盘面占满视口"来定，不按恒星大小。
+        # 恒星半径从 26 收到 6（用户：太大了）后，同样的机位会让恒星变成小点 ——
+        # 但这是**对的**：群星里恒星本来就是 4~6px 的点（refs/src/星域视图4.png 量的）。
+        # 所以这里不改距离，让"星域占多大、星星多大"这个比例自然对上参考图。
+        R = 900
 
         # ── s1 默认全景：相机在斜上方 35°，能同时看见"盘面 + 切片 + 薄层"
         print('拍 s1 默认全景…')
