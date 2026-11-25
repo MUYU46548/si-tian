@@ -8,7 +8,7 @@
         </div>
         <p class="hint">
           <span v-if="!editMode">点击行星进入行星地图 · 点击箭头跳转相邻恒星系 · 点击标记/部队卡看信息 · 滚动缩放 · 拖拽空白处平移</span>
-          <span v-else class="edit-hint">编辑模式：拖拽行星编辑轨道 · 头部“＋ 天体”落下一轨道槽 · 右键空白处在原地添加天体/太空标记/部队卡片 · 右键天体/标记/卡片删除</span>
+          <span v-else class="edit-hint">编辑模式：点行星改类型/颜色 · 拖拽行星编辑轨道 · 头部“＋ 天体”落下一轨道槽 · 右键空白处在原地添加天体/太空标记/部队卡片 · 右键天体/标记/卡片删除</span>
         </p>
       </div>
       <div class="header-actions">
@@ -58,6 +58,46 @@
           </div>
         </div>
       </PanelShell>
+
+      <!-- 2D 天体属性面板（2026-11-25 第七轮）：**编辑模式**下点行星打开。
+           为什么挂在编辑模式：浏览模式下单击行星是“进入行星地图”（既有手感，不改）；
+           编辑模式本来就不导航，正好留给属性编辑 —— 与右键菜单同一层语义。
+           数据/取色口与 3D 卡片完全一致：写 node.planetClass / node.planetColors，
+           类别表 = 内置 + 项目自定义（.sitian 里那份，随项目共享）。 -->
+      <PanelShell
+        class="system-planet-panel"
+        :title="planetPanelTitle"
+        :open="!!editPlanet"
+        data-testid="planet-props-panel"
+        @close="editPlanetId = null"
+      >
+        <div v-if="editPlanet" class="planet-props">
+          <label class="pp-row" title="行星类型：落 node.planetClass；下拉里的“本项目自定义”来自项目文件">
+            <span>类型</span>
+            <select data-testid="planet-props-class" :value="editPlanetClassId" @change="onPlanetClassChange">
+              <optgroup label="内置类型">
+                <option v-for="c in stockPlanetClasses" :key="c.id" :value="c.id">{{ c.label }}</option>
+              </optgroup>
+              <optgroup v-if="customPlanetClasses.length" label="本项目自定义">
+                <option v-for="c in customPlanetClasses" :key="c.id" :value="c.id">{{ c.label }}</option>
+              </optgroup>
+            </select>
+          </label>
+          <label class="pp-row" title="逐颗改色：只影响这一颗，写进项目文件的 planetColors（3D 球面同步变）">
+            <span>颜色</span>
+            <input class="pp-color" type="color" data-testid="planet-props-color-base"
+                   :value="editPlanetColors.base" title="地表主色（海/底色）" @input="onPlanetColor('base', $event)" />
+            <input class="pp-color" type="color" data-testid="planet-props-color-land"
+                   :value="editPlanetColors.land" title="陆块色" @input="onPlanetColor('land', $event)" />
+            <input class="pp-color" type="color" data-testid="planet-props-color-atmo"
+                   :value="editPlanetColors.atmosphere" title="大气边光色" @input="onPlanetColor('atmosphere', $event)" />
+          </label>
+          <p class="pp-hint">改的是项目数据（一条撤销）。类别可以在 3D 观景里“存为类别”。</p>
+          <button class="pp-go" data-testid="planet-props-go" @click="enterPlanetMap">
+            进入行星地图 <Icon name="chevron-right" :size="12" />
+          </button>
+        </div>
+      </PanelShell>
     </div>
 
     <!-- 3D 观景（2026-10-27）：异步组件 + 组件内 `await import('three')`，
@@ -92,8 +132,8 @@ import { SPACE_MARKER_TYPES, FLEET_KINDS } from '../store/geodataModules/spaceEd
 import { usePromptDialog } from '../composables/usePromptDialog';
 import PanelShell from './PanelShell.vue';
 import ContextMenu from './ContextMenu.vue';
-import { buildSystem3dScene, planetClassForNode } from '../utils/system3dScene.js';
-import { getPlanetDisc } from '../utils/planetArt.js';
+import { buildSystem3dScene, planetClassForNode, isStationNode } from '../utils/system3dScene.js';
+import { PLANET_CLASSES, getPlanetDisc, paletteForClass } from '../utils/planetArt.js';
 
 // 3D 观景：异步组件（本文件静态 import 只拿到一个壳，three 在子组件挂载后才动态加载）
 const System3DView = defineAsyncComponent(() => import('./System3DView.vue'));
@@ -121,6 +161,76 @@ const canvas = ref(null);
 const neighborPanelOpen = ref(false);
 // ===== 编辑模式状态（B3） =====
 const editMode = ref(false);
+
+// ===== 2D 天体属性面板（2026-11-25 第七轮）=====
+//
+// 为什么只在编辑模式里点开：浏览模式下单击行星 = 进入行星地图（既有手感，不改）；
+// 编辑模式本来就不导航（onClick 第一分支 return），正好用来选“要改哪一颗”。
+// 存的是**节点 id**而不是 hit 返回的布局副本：布局副本是 `{...planet, x, y}`，
+// updateNode 之后再读它只会读到改前的值（面板看起来“点了没变”）。
+const editPlanetId = ref(null);
+const editPlanet = computed(() => {
+  const id = editPlanetId.value;
+  if (!id) return null;
+  const n = store.nodes.find((x) => x.id === id) || null;
+  // 只对“真行星”开属性：空间站是金属壳，类别/颜色对它没有意义（3D 卡片也没有）
+  return n && n.layer === 'planet' && !isStationNode(n) ? n : null;
+});
+const stockPlanetClasses = PLANET_CLASSES;
+const customPlanetClasses = computed(() => store.planetClasses || []);
+/** 下拉当前值：显式 planetClass 优先，没设过就显示**推断出来的**那一类（与画布上看到的一致） */
+const editPlanetClassId = computed(() => (editPlanet.value
+  ? planetClassForNode(editPlanet.value, { fallbackLayer: 'planet' })
+  : ''));
+/** 三个拾色器的当前显示值：类别默认 + 这一颗的覆盖（与 3D 卡片同一个取色口） */
+const editPlanetColors = computed(() => {
+  const p = editPlanet.value;
+  if (!p) return { base: '#888888', land: '#888888', atmosphere: '#888888' };
+  const d = paletteForClass(editPlanetClassId.value, p.planetColors);
+  return {
+    base: d.base,
+    land: (Array.isArray(d.land) && d.land[0]) || d.base,
+    atmosphere: d.atmosphere || d.base,
+  };
+});
+const planetPanelTitle = computed(() => {
+  const p = editPlanet.value;
+  return p ? `天体属性 · ${p.displayName || p.name}` : '天体属性';
+});
+
+const HEX6 = /^#[0-9a-fA-F]{6}$/;
+
+/** 改类型：写 node.planetClass（一条 undo + 自动保存），当场重画 */
+function onPlanetClassChange(e) {
+  const p = editPlanet.value;
+  const classId = String((e && e.target && e.target.value) || '');
+  if (!p || !classId) return;
+  store.updateNode(p.id, { planetClass: classId });
+  emit('dirty', true);
+  renderer.requestRender();
+}
+
+/** 逐颗改色：写 node.planetColors（与 3D 卡片同一条写口），当场重画 */
+function onPlanetColor(slot, e) {
+  const p = editPlanet.value;
+  const v = String((e && e.target && e.target.value) || '');
+  if (!p || !HEX6.test(v)) return;
+  const colors = { ...(p.planetColors || {}) };
+  if (slot === 'land') colors.land = [v];
+  else colors[slot] = v;
+  store.updateNode(p.id, { planetColors: colors });
+  emit('dirty', true);
+  renderer.requestRender();
+}
+
+/** 面板里的“进入行星地图”：交给 App 的 selectPlanetOrNode（与单击行星同一条入口） */
+function enterPlanetMap() {
+  const p = editPlanet.value;
+  if (!p) return;
+  editPlanetId.value = null;
+  emit('select-node', p);
+}
+
 // ===== 3D 观景（2026-10-27）=====
 const show3d = ref(false);
 // 拖拽中的行星显示位置（系内相对坐标）：非 userMoved 行星改 store 坐标不会立刻反映到
@@ -456,6 +566,8 @@ function jumpTo(neighborId) {
 function toggleEditMode() {
   editMode.value = !editMode.value;
   closeContextMenu();
+  // 退出编辑模式 = 收起属性面板：面板里的写口是“编辑”语义，留在浏览态会凭空挡住画布
+  if (!editMode.value) editPlanetId.value = null;
   // 边界兜底：切出编辑时若仍有未收尾的拖拽（如鼠标已离开画布），补齐撤销记录
   if (!editMode.value) finalizePlanetDrag();
   if (canvas.value) canvas.value.style.cursor = editMode.value ? 'default' : 'grab';
@@ -1098,6 +1210,19 @@ function drawPlanets(ctx) {
       }
     }
 
+    // 编辑选中（2026-11-25 第七轮）：外圈一道青虚线 —— 属性面板改的就是这一颗。
+    // 与“悬停”分色（悬停是绿色实线），否则鼠标一移开就看不出面板对着谁。
+    if (editPlanetId.value === planet.id) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(planet.x, planet.y, r + 6, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.95)';
+      ctx.lineWidth = Math.max(1, 1.4 / scale);
+      ctx.setLineDash([4 / scale, 3 / scale]);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     if (!renderer.isFastMode()) {
       ctx.fillStyle = '#8b949e';
       const pFont = planet.isMoon
@@ -1324,8 +1449,17 @@ const renderer = useCanvasRenderer(canvas, {
   },
   onClick: (hit) => {
     closeContextMenu();
-    // 编辑模式：点击不导航（防误触下钻/跳系），仅清理菜单
-    if (editMode.value) return;
+    // 编辑模式：点击不导航（防误触下钻/跳系）。2026-11-25 第七轮起，点行星 = 选中并打开
+    // 属性面板（类型/颜色），点空白或其它对象 = 收起面板。浏览模式行为**一个字没动**。
+    if (editMode.value) {
+      const nextId = (hit?.type === 'planet' && hit.node.layer === 'planet' && !isStationNode(hit.node))
+        ? hit.node.id : null;
+      if (nextId !== editPlanetId.value) {
+        editPlanetId.value = nextId;
+        renderer.requestRender();
+      }
+      return;
+    }
     if (hit?.type === 'planet') {
       emit('select-node', hit.node);
     } else if (hit?.type === 'star') {
@@ -1404,7 +1538,11 @@ onUnmounted(() => {
 });
 
 // 切换恒星系时关掉 3D（3D 场景只在打开那一刻按 spec 构建一次；换系必须重建，不能沿用旧系行星）
-watch(() => props.system?.id, () => { show3d.value = false; });
+// 同时收起 2D 属性面板：面板按节点 id 打开，换了系那个 id 不在本系（也没有画面依据）
+watch(() => props.system?.id, () => {
+  show3d.value = false;
+  editPlanetId.value = null;
+});
 
 // 切换恒星系（箭头跳转/面包屑切换）或数据变化时重绘；换系后重新自适应视野
 // `props.system` 整个对象（而不是只 `.id`）：叙事状态淡化（2026-09-24）需要覆盖**恒星自身**的 status ——
@@ -1423,6 +1561,9 @@ defineExpose({
   show3d, spec3d, hasPlanets3d, openSystem3d,
   // 编辑模式（B3，供测试/父组件访问）
   editMode, toggleEditMode, createBody, createBodyAt, deleteBodyById, contextMenu, dragPlanet,
+  // 2D 天体属性面板（2026-11-25 第七轮）：打开的是哪一颗 + 三个写口的当前值
+  editPlanetId, editPlanet, editPlanetClassId, editPlanetColors,
+  onPlanetClassChange, onPlanetColor, enterPlanetMap,
   // 卫星轨道（批次D5，供测试访问）
   systemBodies, ctxSetMoonHost, ctxUnsetMoon,
   // 太空实体（B6/B7，供测试/父组件访问）
@@ -1493,6 +1634,37 @@ canvas { display: block; width: 100%; height: 100%; background: var(--map-bg); }
   max-width: 260px;
   max-height: 300px;
 }
+
+/* 2D 天体属性面板（2026-11-25 第七轮）：编辑模式下点行星打开，左下角。
+   与 3D 卡片镜像同一个位置语言（那里也是左下），两种观景切换时手不用找。 */
+.system-planet-panel {
+  left: 12px;
+  bottom: 12px;
+  z-index: 30;
+  width: 250px;
+}
+.planet-props { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.pp-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); }
+.pp-row select {
+  flex: 1; min-width: 0;
+  padding: 3px 6px; font-size: 12px;
+  border: 1px solid var(--panel-border); border-radius: var(--radius-sm);
+  background: var(--panel-bg); color: var(--text-primary);
+}
+.pp-color {
+  width: 30px; height: 20px; padding: 0;
+  border: 1px solid var(--panel-border); border-radius: var(--radius-sm);
+  background: transparent; cursor: pointer;
+}
+.pp-hint { margin: 0; font-size: 10px; line-height: 1.5; color: var(--text-tertiary); }
+.pp-go {
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  padding: 5px 10px; font-size: 12px; cursor: pointer;
+  border: 1px solid var(--accent-border, var(--panel-border));
+  border-radius: var(--radius-sm);
+  background: var(--accent-bg); color: var(--accent);
+}
+.pp-go:hover { background: var(--btn-hover); }
 .neighbor-list { padding: 6px; }
 .neighbor-empty { padding: 14px 10px; text-align: center; font-size: 11px; color: var(--text-tertiary); }
 .neighbor-omitted { padding: 4px 8px 8px; font-size: 10px; color: #d29922; }

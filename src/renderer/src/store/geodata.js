@@ -854,6 +854,17 @@ export const useGeodataStore = defineStore('geodata', () => {
     const startCoord = { ...dragStartCoord };
     const startUserMoved = dragStartUserMoved;
     const nodeId = dragStartId;
+    // 🔴 2026-11-25 第七轮：**没有位移就不是拖拽**。
+    //    编辑模式下 mousedown 落在行星上就会 begin 捕获（那是为了真拖拽），但单击也会走到这里。
+    //    旧实现无条件 `node.userMoved = true` 并压一条 undo → 单击行星会把它从公式位“瞬移”到
+    //    提取器留下的旧坐标（本项目 fixture 实测 y 从 +29 跳到 -200），而且撤销栈里多一条空命令。
+    //    属性面板的点击链就是被这一跳打断的：mouseup 时行星已经不在点击位置，hitTest 变成 null。
+    if (endCoord.x === startCoord.x && endCoord.y === startCoord.y) {
+      dragStartId = null;
+      dragStartCoord = null;
+      dragStartUserMoved = false;
+      return;
+    }
     // 标记为用户手动放置的坐标，布局重算时优先保留
     node.userMoved = true;
     execute({
