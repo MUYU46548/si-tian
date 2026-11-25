@@ -13,6 +13,7 @@
         v-else
         class="menu-item"
         :class="{ danger: item.danger, disabled: item.disabled }"
+        :title="item.title || undefined"
         @click="onSelect(item)"
       >
         <span v-if="item.icon" class="menu-icon"><Icon :name="item.icon" :size="13"/></span>

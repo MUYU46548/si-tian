@@ -297,6 +297,9 @@
         :world-bounds="worldBounds"
         @navigate="handleEagleEyeNavigate"
       />
+
+      <!-- 右键菜单（2026-11-25）：与星域总览同一个 U3 组件，挂在 canvas-wrapper 内（相对定位基准） -->
+      <context-menu :state="ctxMenu.state" @close="closeCtxMenu" />
     </div>
 
     <!-- 门窗详情浮窗（A11）：宽 / 高 / 窗台高 / 沿墙位置，都能改 -->
@@ -622,6 +625,7 @@ import { useGeodataStore } from '../store/geodata';
 // 曾经可以照改内存、但不会落盘（静默丢数据）。
 import { guardWrite } from '../store/writeGate';
 import { useCanvasRenderer } from '../composables/useCanvasRenderer';
+import { useContextMenu } from '../composables/useContextMenu';
 import { usePromptDialog } from '../composables/usePromptDialog';
 import EagleEye from './EagleEye.vue';
 import { computeViewBounds } from '../utils/viewport';
@@ -638,6 +642,10 @@ import {
 import { DEFAULT_WALL_THICKNESS, formatLength, formatArea, fitZoom } from '../utils/interiorUnits';
 // 外观（2026-11-14）：同一份楼层数据的 3D 渲染。three 只在点开时动态加载。
 import ExteriorView from './ExteriorView.vue';
+// 右键菜单（2026-11-25）：用户原话“左键应选中、右键应出菜单/删除，现在都没有”。
+// 建筑内部此前**一个 contextmenu 监听器都没有**（GalaxyMap / ScenarioMap 都有），
+// 所以右键在画布上是死键。这里复用全仓统一的 U3 框架，不另造一套菜单。
+import ContextMenu from './ContextMenu.vue';
 import { hasWalls } from '../interior/buildShell';
 // 出图（第 4 刀）：版式是纯函数，平面图本体仍走 drawInteriorFloor（换 print 主题）= 同源
 import { buildPlanSheet, drawPlanSheet } from '../interior/planSheet';
@@ -1451,6 +1459,9 @@ const renderer = useCanvasRenderer(canvas, {
   onHitTest: hitTest,
   onDblClick: handleCanvasDblClick,
   onClick: handleCanvasClick,
+  // 右键（2026-11-25）：真入口是 useCanvasRenderer 内部的 contextmenu 监听（已 preventDefault），
+  // 这里只拿到世界坐标 —— 别在组件里再挂一个监听器，那会变成两份实现（test_88 的教训）。
+  onContextMenu: openInteriorContextMenu,
   onBoxSelect: handleBoxSelect,
   onWheel: handleWheel,
   // 自绘时的橡皮筋要跟着光标走（其余时候不做任何事，避免无谓重绘）
@@ -1962,6 +1973,194 @@ function handleDragEnd(wx, wy, info) {
   dragStartPos.value = null;
   dragStartFurniturePos.value = null;
   multiFurnitureStartMap.value = null;
+}
+
+// ===== 右键菜单（2026-11-25）=====
+// 用户原话：“左键应选中、右键应出菜单/删除，现在都没有”。
+// 之前建筑内部**一个 contextmenu 监听器都没有** —— 右键在画布上是死键。
+// 口径与 GalaxyMap / ScenarioMap 一致：走 useCanvasRenderer 已有的 onContextMenu 口
+// + 全仓统一的 U3 ContextMenu 组件（不另造一套）。
+//
+// 纪律：
+//   · 只有**编辑模式**弹菜单（浏览态右键什么都不做）—— 菜单里全是写操作，
+//     与“浏览态不许改数据”这条线一致（GalaxyMap §bug6 就是这么修的）。
+//   · 只读态也弹，但每一项 disabled 并写明理由（用户点得到、看得懂为什么点不动），
+//     而不是整片没反应 —— “点了没反应”正是这次要消除的观感。
+//   · 菜单项复用**已有的**删除/旋转/改名函数，不重写一套写口（避免双实现漂移）。
+const ctxMenu = useContextMenu();
+const ctxTarget = ref(null);   // { kind, id, label }
+
+function closeCtxMenu() {
+  ctxMenu.close();
+  ctxTarget.value = null;
+}
+
+/** 世界坐标 → 画布内像素（ContextMenu 相对 canvas-wrapper 定位） */
+function worldToScreen(wx, wy) {
+  const vt = renderer.getViewTransform();
+  const cvs = canvas.value;
+  if (!cvs) return { x: 0, y: 0 };
+  return {
+    x: wx * vt.scale + vt.x + cvs.clientWidth / 2,
+    y: wy * vt.scale + vt.y + cvs.clientHeight / 2,
+  };
+}
+
+/**
+ * 右键命中判定的优先级：**和左键完全一致**（同一套 hit* 函数、同一个顺序）。
+ * 用户学会了左键能点中什么，右键就一定能对着同一个东西弹菜单 —— 这是“手感一致”的最低要求。
+ */
+function hitAnyForContext(wx, wy) {
+  const f = hitTest(wx, wy);
+  if (f) return { kind: 'furniture', id: f.id, label: f.name || '家具' };
+  const op = hitOpening(wx, wy);
+  if (op) return { kind: op.kind === 'doors' ? 'door' : 'window', id: op.id, label: op.kind === 'doors' ? '门' : '窗' };
+  const st = hitStair(wx, wy);
+  if (st) return { kind: 'stair', id: st.id, label: '楼梯' };
+  const col = hitColumn(wx, wy);
+  if (col) return { kind: 'column', id: col.id, label: '柱' };
+  const hl = hitHole(wx, wy);
+  if (hl) return { kind: 'hole', id: hl.id, label: '楼板洞口' };
+  const wall = hitWallBody(wx, wy);
+  if (wall) return { kind: 'wall', id: wall.id, label: '墙' };
+  const room = hitRoom(wx, wy);
+  if (room) return { kind: 'room', id: room.id, label: room.name || '房间' };
+  return null;
+}
+
+/** 把目标的选中态摆好（菜单动作复用 deleteSelected 等函数，它们读的是选中态） */
+function selectForContext(t) {
+  selectedFurniture.value = null;
+  selectedFurnitureIds.value = [];
+  selectedWallId.value = null;
+  selectedWallIds.value = [];
+  selectedOpening.value = null;
+  selectedStairId.value = null;
+  selectedColumnId.value = null;
+  selectedHoleId.value = null;
+  selectedRoomId.value = null;
+  editingStair.value = false;
+  const floor = currentFloor.value;
+  if (!t || !floor) return;
+  if (t.kind === 'furniture') {
+    const item = (floor.furniture || []).find((x) => x.id === t.id);
+    if (item) { selectedFurniture.value = item; selectedFurnitureIds.value = [item.id]; }
+  } else if (t.kind === 'door' || t.kind === 'window') {
+    const kind = t.kind === 'door' ? 'doors' : 'windows';
+    const o = (floor[kind] || []).find((x) => x.id === t.id);
+    if (o) selectedOpening.value = { kind, id: o.id, wallId: o.wallId };
+  } else if (t.kind === 'stair') {
+    selectedStairId.value = t.id;
+  } else if (t.kind === 'column') {
+    selectedColumnId.value = t.id;
+  } else if (t.kind === 'hole') {
+    selectedHoleId.value = t.id;
+  } else if (t.kind === 'wall') {
+    selectedWallId.value = t.id;
+    selectedWallIds.value = [t.id];
+  } else if (t.kind === 'room') {
+    selectedRoomId.value = t.id;
+  }
+}
+
+function openInteriorContextMenu(wx, wy) {
+  // 浏览态不弹（菜单里全是写操作）
+  if (!editMode.value) return;
+
+  const t = hitAnyForContext(wx, wy);
+  ctxTarget.value = t;
+  selectForContext(t);
+  renderer.requestRender();
+
+  const ro = store.isReadOnly;
+  const roReason = ro ? (store.readOnlyReason || '当前为只读状态') : '';
+  /** 只读时整项禁用并说明理由（比“点了没反应”清楚） */
+  const gate = (needWrite) => ({ disabled: needWrite && ro, title: needWrite && ro ? roReason : undefined });
+  const del = (needWrite = true) => ({
+    key: 'delete', label: `删除${t ? t.label : ''}`, icon: 'trash', danger: true,
+    ...gate(needWrite), action: () => { deleteSelected(); closeCtxMenu(); },
+  });
+
+  const items = [];
+  if (!t) {
+    // 空白处：给“工具类”的入口，而不是空菜单（空菜单看起来像坏了）
+    items.push({ key: 'hdr-tools', header: true, label: '在这里' });
+    items.push({
+      key: 'add-furniture', label: '放一件家具', icon: 'armchair', ...gate(true),
+      action: () => { interactionMode.value = 'add_furniture'; closeCtxMenu(); },
+    });
+    items.push({
+      key: 'fit', label: '铺满画布', icon: 'maximize',
+      action: () => { fitToFloor(); closeCtxMenu(); },
+    });
+    items.push({ separator: true });
+    items.push({
+      key: 'exit-edit', label: '退出编辑', icon: 'check',
+      action: () => { exitEditMode(); closeCtxMenu(); },
+    });
+  } else if (t.kind === 'furniture') {
+    const item = selectedFurniture.value;
+    items.push({ key: 'hdr', header: true, label: t.label });
+    items.push({
+      key: 'rotate', label: '旋转 90°', icon: 'rotate', ...gate(true),
+      action: () => { rotateSelected(); closeCtxMenu(); },
+    });
+    items.push({
+      key: 'edit', label: '改名称 / 类型 / 尺寸…', icon: 'pencil', ...gate(true),
+      action: () => { editingPopover.value = false; startEditPopover(); closeCtxMenu(); },
+    });
+    items.push({
+      key: 'shape', label: '画形状…', icon: 'pen-tool', ...gate(true),
+      action: () => { startShapeEdit(); closeCtxMenu(); },
+    });
+    if (item) {
+      items.push({
+        key: 'transfer', label: '复制 / 移到其它楼层…', icon: 'copy', ...gate(true),
+        action: () => { openTransferDialog(); closeCtxMenu(); },
+      });
+    }
+    items.push({ separator: true });
+    items.push(del());
+  } else if (t.kind === 'wall') {
+    items.push({ key: 'hdr', header: true, label: `墙 · ${Math.round(Math.hypot(
+      (currentFloor.value?.walls || []).find((w) => w.id === t.id)?.end.x - (currentFloor.value?.walls || []).find((w) => w.id === t.id)?.start.x || 0,
+      (currentFloor.value?.walls || []).find((w) => w.id === t.id)?.end.y - (currentFloor.value?.walls || []).find((w) => w.id === t.id)?.start.y || 0))} cm` });
+    items.push({
+      key: 'multi', label: '加选 / 取消这面墙（Shift）', icon: 'check-square',
+      action: () => {
+        const i = selectedWallIds.value.indexOf(t.id);
+        if (i === -1) selectedWallIds.value.push(t.id);
+        else selectedWallIds.value.splice(i, 1);
+        selectedWallId.value = selectedWallIds.value[selectedWallIds.value.length - 1] || null;
+        renderer.requestRender();
+        closeCtxMenu();
+      },
+    });
+    items.push({ separator: true });
+    // 删墙会把挂在上面的门窗一起删掉 —— 菜单里写明，别让用户发现了才后悔
+    items.push({
+      key: 'delete', label: '删除这面墙', icon: 'trash', danger: true, ...gate(true),
+      action: () => { deleteSelectedWalls(); closeCtxMenu(); },
+    });
+  } else if (t.kind === 'room') {
+    items.push({ key: 'hdr', header: true, label: t.label });
+    items.push({
+      key: 'rename', label: '给房间改名…', icon: 'pencil', ...gate(true),
+      action: () => { renameSelectedRoom(); closeCtxMenu(); },
+    });
+    // 房间是**派生数据**（由墙围合出来），没有“删除房间”—— 只能删墙。这一条要写进菜单，
+    // 否则用户会一直找“删除房间”在哪（删不掉的东西最让人上火）。
+    items.push({
+      key: 'hint-room', label: '房间由墙围出来：删墙才会消失', icon: 'info', disabled: true,
+    });
+  } else {
+    // 门窗 / 楼梯 / 柱 / 洞：选中 + 删除（细节改在右侧浮窗里，不在这里重复一遍）
+    items.push({ key: 'hdr', header: true, label: t.label });
+    items.push(del());
+  }
+
+  const pos = worldToScreen(wx, wy);
+  ctxMenu.open(items, pos, canvas.value?.parentElement);
 }
 
 function handleCanvasClick(hit, wx, wy) {
@@ -3841,7 +4040,8 @@ defineExpose({ canvas, renderer });
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--bg-primary);
+  /* `--bg-primary` 从未定义（见 .form-row 注释）→ 改用已定义的 `--app-bg` */
+  background: var(--app-bg);
 }
 
 .map-header {
@@ -4450,10 +4650,12 @@ defineExpose({ canvas, renderer });
   color: var(--text-primary);
 }
 
+/* 见下方 .form-row 的说明：`--bg-primary` 全仓从未定义 → 这几处输入框背景同样失效、
+   暗色主题下落成 UA 白底 + 近白文字。统一改成已定义的 `--input-bg`。 */
 .popover-title-input {
   flex: 1;
-  background: var(--bg-primary);
-  border: 1px solid var(--nav-border);
+  background: var(--input-bg);
+  border: 1px solid var(--input-border, var(--nav-border));
   color: var(--text-primary);
   padding: 4px 6px;
   border-radius: var(--radius-sm);
@@ -4464,8 +4666,8 @@ defineExpose({ canvas, renderer });
 .popover-select,
 .popover-number {
   flex: 1;
-  background: var(--bg-primary);
-  border: 1px solid var(--nav-border);
+  background: var(--input-bg);
+  border: 1px solid var(--input-border, var(--nav-border));
   color: var(--text-primary);
   padding: 4px 6px;
   border-radius: var(--radius-sm);
@@ -4481,8 +4683,8 @@ defineExpose({ canvas, renderer });
 
 .size-input {
   width: 50px;
-  background: var(--bg-primary);
-  border: 1px solid var(--nav-border);
+  background: var(--input-bg);
+  border: 1px solid var(--input-border, var(--nav-border));
   color: var(--text-primary);
   padding: 3px 5px;
   border-radius: var(--radius-sm);
@@ -4608,12 +4810,17 @@ defineExpose({ canvas, renderer });
   min-width: 50px;
 }
 
+/* 🔴 2026-11-25：这里原来是 `background: var(--bg-primary)`，而 `--bg-primary` **全仓从未定义过**
+   （90 个已定义变量里没有它）→ 整条声明在计算值阶段失效 → 背景回落成浏览器默认白底，
+   而 color 是 `var(--text-primary)`（暗色主题 = #e2e8f0 近白）→ **白底白字，字看不见**。
+   这就是用户报的“下拉框白底黑字看不清”。改用**已定义**的 `--input-bg`（暗色 #0d1117 / 亮色 #fff），
+   与全仓其它输入框同一口径；不新增变量（避免再造一套并行命名）。 */
 .form-row input,
 .form-row select {
   flex: 1;
   padding: 6px 8px;
-  border: 1px solid var(--nav-border);
-  background: var(--bg-primary);
+  border: 1px solid var(--input-border, var(--nav-border));
+  background: var(--input-bg);
   color: var(--text-primary);
   border-radius: var(--radius-sm);
   font-size: 12px;
