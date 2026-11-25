@@ -466,6 +466,38 @@ def main():
         print(f"   采样几何（拍完那一帧）：cx={rect_on['pageCx']:.1f} cy={rect_on['pageCy']:.1f} "
               f"r={rect_on['pageR']:.1f}")
 
+        # ── 判据 E：拾色器真的重画了这一颗（点击 → 改色 → 盘内像素必须变）──
+        # 写回 store **不在这里验**：mock 没打开项目 → 只读态 → guardWrite 拒绝写
+        #（READONLY_WITHOUT_PROJECT，是产品设计不是缺陷）；那条写口与 set-class 同源，
+        # 由 test_163 在真项目上覆盖。这里能验的是"拾色器接上了、而且真的重画"。
+        for ev in ('mouseMoved', 'mousePressed', 'mouseReleased'):
+            cdp.send('Input.dispatchMouseEvent', {
+                'type': ev, 'x': rect_on['pageCx'], 'y': rect_on['pageCy'],
+                'button': 'left', 'clickCount': 1,
+            })
+        time.sleep(0.3)
+        click = jget(cdp, _s3d("""
+          const card = document.querySelector('[data-testid="sys3d-card"]');
+          if (!card) return JSON.stringify({ fails: ['点中行星后卡片没出现'] });
+          const inp = document.querySelector('[data-testid="sys3d-color-base"]');
+          if (!inp) return JSON.stringify({ fails: ['卡片里没有拾色器'] });
+          const before = inp.value;
+          inp.value = '#ff3b30';
+          inp.dispatchEvent(new Event('input', { bubbles: true }));
+          return JSON.stringify({ fails: [], before });
+        """), desc='点行星+改色')
+        if click.get('fails'):
+            print(f'     原因：{click.get("fails")}')
+        shots.append(shoot(cdp, 'system3d-recolor'))
+        # 还原颜色：后面还有截图，C 的反向探针要跟"改前"逐像素比
+        if click.get('before'):
+            cdp.eval(_s3d("""
+              const inp = document.querySelector('[data-testid="sys3d-color-base"]');
+              if (inp) { inp.value = '%s'; inp.dispatchEvent(new Event('input', { bubbles: true })); }
+              return 1;
+            """ % click.get('before')))
+            time.sleep(0.3)
+
         # ── 反向探针：只关**这一颗**行星的大气，同一机位再拍 ─────────────
         # ⚠️ 不能全局关：画面里还有别的行星和一颗卫星，它们的轮廓也会合法地变，
         #    判据 C 就成了假红（2026-11-25 第二轮，加了卫星之后当场红）。
@@ -528,6 +560,19 @@ def main():
         }
         print(f'   B 轮廓外真的亮了：{halo_on:.1f} → 关掉后 {halo_off:.1f}（差 {gain:.1f}，'
               f"要求 ≥ {HALO_GAIN_MIN}）→ {'✅' if ok_b else '❌'}")
+
+        # ── 判据 E 的像素面：改色前后，行星盘内必须真的变了 ──────────────
+        img_rc = Image.open(os.path.join(OUT_DIR, 'system3d-recolor.png')).convert('RGB')
+        rc = ImageChops.difference(img_on, img_rc).convert('L')
+        box = (int(cx - r * 1.1), int(cy - r * 1.1), int(cx + r * 1.1), int(cy + r * 1.1))
+        recolor_px = sum(1 for v in list(rc.crop(box).getdata()) if v >= 8)
+        ok_e = (not click.get('fails')) and recolor_px >= 200
+        report['checks'].append({
+            'id': 'E', 'ok': ok_e,
+            'detail': f"card_ok={not click.get('fails')} recolor_px={recolor_px} (>=200) before={click.get('before')}",
+        })
+        print(f"   E 拾色器：卡片 {'✅' if not click.get('fails') else '❌'}，"
+              f"改色后盘内变化 {recolor_px} px（要求 ≥200）→ {'✅' if ok_e else '❌'}")
         print(f"   C 反向探针只改了那一圈：明显变化 {loc['hot']} px，其中 {loc['rim_fraction'] * 100:.1f}% 在环带里"
               f"（要求 ≥ 90%），轮廓外最大差 {loc['max_diff_outside']}（要求 ≤ {HALO_OFF_MAX}）"
               f"→ {'✅' if ok_c else '❌'}")
