@@ -5,7 +5,7 @@
 ## 干什么
 
 把 `scripts/proto/domain3d-proto.html` 用真实浏览器（Edge headless）跑起来，
-自动点「开始量」，等两轮跑完，把对照结果打出来。
+自动点"开始量"，等两轮跑完，把对照结果打出来。
 
 ## 为什么要有它（而不是手动开浏览器看）
 
@@ -138,7 +138,7 @@ def main():
             pass
         print(f'场景：{counts}')
 
-        # 点「开始量」—— 两轮各 5 秒，加上间隔约 13 秒
+        # 点"开始量"—— 两轮各 5 秒，加上间隔约 13 秒
         # ⚠️ 判"跑完"必须看 **RESULT 里两个键都在**，不能看 verdict 的 class：
         #    第一版看 `verdict.classList.contains('show')`，结果在合批那轮刚结束时就以为跑完了
         #    （showVerdict 只在最后调，但探针的等待窗口 40s 里撞上了中间态）→ 只拿到一半数据。
