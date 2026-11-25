@@ -98,7 +98,8 @@
   <div class="hud-body">
   <div class="sub">只验一件事：合批能不能撑住帧率</div>
 
-  <div class="row"><span class="k">恒星系（本星域）</span><span class="v" id="v-stars">–</span></div>
+  <div class="row"><span class="k">星域数</span><span class="v" id="v-domains">–</span></div>
+  <div class="row"><span class="k">恒星系（全部）</span><span class="v" id="v-stars">–</span></div>
   <div class="row"><span class="k">航道段</span><span class="v" id="v-lanes">–</span></div>
   <div class="row"><span class="k">星域边界</span><span class="v" id="v-borders">–</span></div>
   <div class="sep"></div>
@@ -165,75 +166,108 @@ function mulberry32(seed) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 1. 造一份"一个星域"的假数据
+// 1. 造"多星域"的假数据
 //    ⚠️ 形状与 domain3dScene.js 的输入完全一致 —— 原型验的必须是真形状，
 //       否则量出来的数字不能外推到产品。
-// ═══════════════════════════════════════════════════════════════════════════
+//
+// 🔴 2026-11-25 改成多星域（原来是单星域，导致"多域不同色"这件事根本没机会暴露）。
+//    起因是用户提醒"做的时候不看看司天现在的样子吗？万一还不如现状怎么办？"
+//    —— 拍了一张现状（build/sample-galaxy/generated.png）：司天是**四域四色**，
+//    而我的原型只有一种青蓝。**现状在配色上赢了**，必须先补。
+//    对照记录见 docs/proto/DOMAIN3D_VS_CURRENT.md。
+const FACTION_PALETTE = [
+  { name: '第一星域', color: '#4A90D9' },   // 蓝 —— 与 galaxyLayout.js#FACTION_COLORS 同族
+  { name: '第二星域', color: '#9B59B6' },   // 紫
+  { name: '第三星域', color: '#5CB85C' },   // 绿
+  { name: '第四星域', color: '#E74C3C' },   // 红
+];
+
+/**
+ * 造 N 个星域，每个域内若干恒星系 + 域内航道。
+ *
+ * @param {object} opts
+ * @param {number} [opts.stars]      **每个星域**的恒星系数（默认 30）
+ * @param {number} [opts.domains]    星域个数（默认 4，与司天现状同规模）
+ * @param {number} [opts.radius]     单域半径（默认 900）
+ * @param {number} [opts.gap]        域中心间距（默认 radius*2.4，保证领土不压叠）
+ * @param {number} [opts.seed]
+ */
 function makeDomainFixture(opts = {}) {
-  const count = opts.stars ?? 30;            // 默认 30：A 档 120 星 ÷ 4 势力
+  const count = opts.stars ?? 30;
+  const domainCount = Math.max(1, Math.min(8, opts.domains ?? 4));
   const radius = opts.radius ?? 900;
+  const gap = opts.gap ?? radius * 2.4;
   const seed = opts.seed ?? 20261125;
   const rnd = mulberry32(seed);
 
-  const stars = [];
-  for (let i = 0; i < count; i++) {
-    // 极坐标撒点，内密外疏（与生成器的盘面观感一致）
-    const u = rnd();
-    const rr = radius * Math.sqrt(u) * 0.92;
-    const ang = rnd() * Math.PI * 2;
-    stars.push({
-      id: `d31|star_${i}`,
-      name: `星${i + 1}`,
-      x: Math.cos(ang) * rr,
-      y: Math.sin(ang) * rr,
+  const domains = [];
+  for (let d = 0; d < domainCount; d++) {
+    // 域中心：环形排布（与司天现状的"四域分布"同构；≥8 个时自动加环）
+    const pal = FACTION_PALETTE[d % FACTION_PALETTE.length];
+    const ring = Math.floor(d / 8);
+    const nInRing = Math.min(8, domainCount - ring * 8);
+    const idxInRing = d % 8;
+    const ang = (idxInRing / Math.max(1, nInRing)) * Math.PI * 2 + ring * 0.4;
+    const rad = gap * (1 + ring * 0.9);
+    const cx = Math.cos(ang) * rad;
+    const cy = Math.sin(ang) * rad;
+
+    const domId = `d${d + 1}`;
+    const stars = [];
+    for (let i = 0; i < count; i++) {
+      // 极坐标撒点，内密外疏（与生成器的盘面观感一致）
+      const u = rnd();
+      const rr = radius * Math.sqrt(u) * 0.92;
+      const a2 = rnd() * Math.PI * 2;
+      stars.push({
+        id: `${domId}|star_${i}`,
+        name: `${pal.name.slice(0, 2)}·星${i + 1}`,
+        x: cx + Math.cos(a2) * rr,
+        y: cy + Math.sin(a2) * rr,
+      });
+    }
+
+    // 域内航道：最近邻 2 条
+    const laned = new Set();
+    const lanes = [];
+    for (let i = 0; i < stars.length; i++) {
+      const a = stars[i];
+      const near = stars
+        .map((b, j) => ({ j, d: j === i ? Infinity : Math.hypot(b.x - a.x, b.y - a.y) }))
+        .sort((p, q) => p.d - q.d)
+        .slice(0, 2);
+      for (const n of near) {
+        const b = stars[n.j];
+        const key = a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`;
+        if (laned.has(key)) continue;
+        if (n.d > radius * 0.45) continue;
+        laned.add(key);
+        lanes.push({ id: `hl_${d}_${lanes.length}`, from: a.id, to: b.id });
+      }
+    }
+
+    // 星域边界：一圈带扰动的圆（真实现里来自 territory.js 的 φ 场轮廓）
+    const pts = [];
+    for (let i = 0; i < 48; i++) {
+      const t = (i / 48) * Math.PI * 2;
+      const wob = 1 + 0.06 * Math.sin(t * 3 + 1.2 + d);
+      pts.push({
+        x: cx + Math.cos(t) * radius * 1.02 * wob,
+        y: cy + Math.sin(t) * radius * 1.02 * wob,
+      });
+    }
+
+    domains.push({
+      domain: { id: domId, name: pal.name, factionColor: pal.color },
+      stars,
+      hyperlanes: lanes,
+      borders: [{ points: pts }],
+      radius,
+      center: { x: cx, y: cy },
     });
   }
 
-  // 航道：最近邻 + 少量成环（够密，能代表真实拓扑的量级）
-  const laned = new Set();
-  const lanes = [];
-  for (let i = 0; i < stars.length; i++) {
-    const a = stars[i];
-    // 找最近的两个邻居
-    const near = stars
-      .map((b, j) => ({ j, d: j === i ? Infinity : Math.hypot(b.x - a.x, b.y - a.y) }))
-      .sort((p, q) => p.d - q.d)
-      .slice(0, 2);
-    for (const n of near) {
-      const b = stars[n.j];
-      const key = a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`;
-      if (laned.has(key)) continue;
-      // 太长的边不要（否则星域图变成蜘蛛网）
-      if (n.d > radius * 0.45) continue;
-      laned.add(key);
-      lanes.push({ id: `hl_${lanes.length}`, from: a.id, to: b.id });
-    }
-  }
-
-  // 星域边界：一圈圆（真实现里来自 territory.js 的 φ 场轮廓）
-  const pts = [];
-  for (let i = 0; i < 48; i++) {
-    const t = (i / 48) * Math.PI * 2;
-    const wob = 1 + 0.06 * Math.sin(t * 3 + 1.2);
-    pts.push({ x: Math.cos(t) * radius * 1.02 * wob, y: Math.sin(t) * radius * 1.02 * wob });
-  }
-
-  // 势力色（2026-11-25 补）：参考图 `refs/src/星域视图1.jpg` 里领土是**半透明色块、
-  // 颜色随势力**（蓝 / 青 / 绿 / 紫 / 红各不相同）。原型原来固定金色，那是"一条边"，不是"一片领土"。
-  // 色值抄 `galaxyLayout.js` 的默认势力配色族（与 2D 画布同口径，不自己编）。
-  // 正式实现里这个值来自 `resolveDomainColor(domain)`：preview 覆盖 > node.factionColor > 名字哈希。
-  // ⚠️ 这里取的是一个**中等饱和的青蓝**：参考图 `星域视图1.jpg` 里领土是青/蓝系，
-  //    而且要在"暗背景 + 0.14 不透明度"下仍然读得出是一片区域（太暗就成黑块）。
-  const factionColor = '#3d86c6';
-
-  // 星名（参考图：帝名是小字、字距大、白色，压在领土中央）
-  const starNames = stars.map((s) => s.name);
-
-  return {
-    domain: { id: 'd31', name: '原型星域', factionColor },
-    stars, hyperlanes: lanes, borders: [{ points: pts }], radius,
-    starNames,
-  };
+  return { domains, radius, domainCount };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -245,7 +279,7 @@ function makeDomainFixture(opts = {}) {
 // ② 星域边界在 3D 里是**平面切片**（z=0 上的一张轮廓，不是立体体积）→ 见边框 & 切片面
 // ③ 恒星系 z 分布**近似平面只做薄层** → Z_THICKNESS 从 0.18 收到 0.06
 const Z_THICKNESS = 0.06;
-// 恒星半径：用户 2026-11-25 指出「恒星太大了」。
+// 恒星半径：用户 2026-11-25 指出"恒星太大了"。
 // 群星实测 4~6px 带光晕（`refs/src/星域视图4.png` / `星链接线1.jpg` 在 1920 宽下量的）。
 // 20 太大；6 在 1280 宽视口里对应约 5px 屏幕直径，与参考图同量级。
 const STAR_RADIUS = 6;
@@ -274,70 +308,97 @@ function starTintOf(id) {
   return STAR_CLASSES[0].tint;
 }
 
-// 航道：MANIFEST 记「只有一种青色（约 #4fd6d6），靠明暗分主次，不按类型换色」
+// 航道：MANIFEST 记"只有一种青色（约 #4fd6d6），靠明暗分主次，不按类型换色"
 const LANE_COLOR = '#4fd6d6';
-// 边界：MANIFEST 记「厚带双线结构：内 1px 亮线 + 外柔光 8~12px」
+// 边界：MANIFEST 记"厚带双线结构：内 1px 亮线 + 外柔光 8~12px"
 const BORDER_INNER = '#ffd479';
 const BORDER_GLOW = '#c8a24a';
 const BORDER_FILL = '#2a5a7a';
 
+/**
+ * 把"N 个星域"算成一份可合批的场景描述。
+ *
+ * 与 `src/renderer/src/galaxy/domain3dScene.js` 同职责（那份处理单域，这份处理多域）。
+ * 结构上把"恒星/航道"合并成一份扁平数组（跨域一起合批），
+ * 而"边界/填充/势力"按域分开（因为每个域颜色不同）。
+ */
 function buildScene(fx) {
   const zHalf = Z_THICKNESS * fx.radius;
-  const ids = [], names = [], pos = new Float32Array(fx.stars.length * 3);
-  fx.stars.forEach((s, i) => {
-    ids.push(s.id); names.push(s.name);
-    pos[i * 3] = s.x; pos[i * 3 + 1] = s.y;
-    pos[i * 3 + 2] = (stableHash01(s.id) * 2 - 1) * zHalf;
+
+  const ids = [], names = [], pos = [];
+  const domainOfStar = [];        // 每个恒星属于哪个域（建标签/归属环时用）
+  const lanesAll = [];
+  const domainInfos = [];
+
+  fx.domains.forEach((d, di) => {
+    d.stars.forEach((s) => {
+      ids.push(s.id);
+      names.push(s.name);
+      pos.push(s.x, s.y, (stableHash01(s.id) * 2 - 1) * zHalf);
+      domainOfStar.push(di);
+    });
+    lanesAll.push(...d.hyperlanes);
+    domainInfos.push({
+      id: d.domain.id,
+      name: d.domain.name,
+      factionColor: d.domain.factionColor,
+      center: d.center,
+      // 该域恒星的全局下标区间（渲染时分色温/归属环要用）
+      starFrom: ids.length - d.stars.length,
+      starTo: ids.length,
+    });
   });
 
+  const starPos = new Float32Array(pos);
   const idx = new Map(ids.map((id, i) => [id, i]));
   const seen = new Set();
   const lanePos = [];
-  for (const hl of fx.hyperlanes) {
+  for (const hl of lanesAll) {
     if (!idx.has(hl.from) || !idx.has(hl.to) || hl.from === hl.to) continue;
     const key = hl.from < hl.to ? `${hl.from}|${hl.to}` : `${hl.to}|${hl.from}`;
     if (seen.has(key)) continue;
     seen.add(key);
     const a = idx.get(hl.from), b = idx.get(hl.to);
-    lanePos.push(pos[a * 3], pos[a * 3 + 1], pos[a * 3 + 2]);
-    lanePos.push(pos[b * 3], pos[b * 3 + 1], pos[b * 3 + 2]);
+    lanePos.push(starPos[a * 3], starPos[a * 3 + 1], starPos[a * 3 + 2]);
+    lanePos.push(starPos[b * 3], starPos[b * 3 + 1], starPos[b * 3 + 2]);
   }
 
-  const borders = fx.borders.map((b) => {
+  // 边界：每个域一组 Float32Array（颜色不同，不能合并成一批）
+  const bordersByDomain = fx.domains.map((d) => d.borders.map((b) => {
     const arr = [];
     for (const p of b.points) arr.push(p.x, p.y, 0);
     arr.push(b.points[0].x, b.points[0].y, 0);
     return new Float32Array(arr);
-  });
+  }));
 
-  // bbox：标签挑选（按离中心远近）与相机取景都要用。
-  // 🔴 2026-11-25 漏了这个字段 → `buildStarLabels` 里 `sc.bbox.minX` 抛 TypeError，
-  //    而 boot 是裸调用、异常被静默吞掉，页面只停在第三条日志。补上，并且给默认值兜底。
+  // bbox：标签挑选与相机取景都要用
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (let i = 0; i < fx.stars.length; i++) {
-    const x = pos[i * 3], y = pos[i * 3 + 1];
+  for (let i = 0; i < ids.length; i++) {
+    const x = starPos[i * 3], y = starPos[i * 3 + 1];
     if (x < minX) minX = x; if (x > maxX) maxX = x;
     if (y < minY) minY = y; if (y > maxY) maxY = y;
   }
   if (!Number.isFinite(minX)) {
-    minX = -fx.radius; maxX = fx.radius; minY = -fx.radius; maxY = fx.radius;
+    const span = fx.radius * (1 + fx.domainCount);
+    minX = -span; maxX = span; minY = -span; maxY = span;
   }
 
   return {
-    ids, names, starPos: pos,
+    ids, names, starPos,
+    domainOfStar,
+    domains: domainInfos,
     lanePos: new Float32Array(lanePos),
-    borders,
-    // 视野/取景/标签都要用：把 domain（含势力色）与 radius 一并带出去，
-    // 否则调用方只能从别处再摸一份（第一版就是这么漏的）。
-    domain: fx.domain,
+    bordersByDomain,
     radius: fx.radius,
     bbox: { minX, minY, maxX, maxY },
     counts: {
-      stars: fx.stars.length,
+      stars: ids.length,
+      domains: domainInfos.length,
       laneSegments: lanePos.length / 6,
-      borders: borders.length,
-      drawCallsIfBatched: 3,
-      drawCallsIfNaive: fx.stars.length + (lanePos.length / 6) + borders.length,
+      borders: bordersByDomain.reduce((n, a) => n + a.length, 0),
+      drawCallsIfBatched: 0,     // 运行时由 renderer.info 实测，不再预估
+      drawCallsIfNaive: ids.length + lanePos.length / 6
+        + bordersByDomain.reduce((n, a) => n + a.length, 0),
     },
   };
 }
@@ -512,11 +573,20 @@ function makeLabelTexture(text, opts) {
   const strokePx = Math.max(2, Math.round(fontPx * 0.23));
   const pad = strokePx + 4;
   const S = 2;   // 超采样
+  // 观感：MANIFEST 记"
+  //   · 帝名小字、字距大、白色，压在领土中央
+  //   · 未殖民系统的星名是灰色小字，已殖民的是白色"
+  // 所以 fill/stroke/weight 都要可配置，不能写死。
+  const fill = (opts && opts.fill) || 'rgba(255,255,255,0.96)';
+  const stroke = (opts && opts.stroke) || 'rgba(4,7,14,0.85)';
+  const weight = (opts && opts.weight) || 400;
+  const italic = !!(opts && opts.italic);
+  const spacingRatio = (opts && opts.spacing != null) ? opts.spacing : 0.06;
   const cv = document.createElement('canvas');
   const ctx = cv.getContext('2d');
-  const font = `${fontPx * S}px "Segoe UI", system-ui, "Microsoft YaHei", sans-serif`;
+  const font = `${italic ? 'italic ' : ''}${weight} ${fontPx * S}px "Segoe UI", system-ui, "Microsoft YaHei", sans-serif`;
   ctx.font = font;
-  const letterSpacing = fontPx * 0.06 * S;   // 字距略宽（参考图的星名不是紧排）
+  const letterSpacing = fontPx * spacingRatio * S;   // 字距（群星的星名/帝名都略宽）
   const chars = [...text];
   let w = 0;
   for (const ch of chars) w += ctx.measureText(ch).width + letterSpacing;
@@ -529,12 +599,12 @@ function makeLabelTexture(text, opts) {
   c2.lineJoin = 'round';
   const y = cv.height / 2;
   // 先描边（深色，让白字在亮背景上也读得出）
-  c2.strokeStyle = 'rgba(4,7,14,0.85)';
+  c2.strokeStyle = stroke;
   c2.lineWidth = strokePx * S;
   let x = pad * S;
   for (const ch of chars) { c2.strokeText(ch, x, y); x += c2.measureText(ch).width + letterSpacing; }
   // 再填充
-  c2.fillStyle = 'rgba(255,255,255,0.96)';
+  c2.fillStyle = fill;
   x = pad * S;
   for (const ch of chars) { c2.fillText(ch, x, y); x += c2.measureText(ch).width + letterSpacing; }
 
@@ -547,47 +617,85 @@ function makeLabelTexture(text, opts) {
 }
 
 /**
- * 星名标签组。**必须限数量**：每个标签一个 Sprite，不能合批。
+ * 标签组：**势力名**（每个星域一条，居中大字）+ **星名**（挑显要的若干条）。
  *
- * 取舍：参考图的远景确实不画标签（MANIFEST 记「远景不画航道、只留星点」），
- * 所以这里按"离中心近的优先"挑前 N 个（默认 60），与 2D 的 podium 思路一致。
+ * 观感依据（MANIFEST 记的群星实测）：
+ *   · 帝名：小字、字距大、白色，压在领土中央
+ *   · 未殖民系统的星名是**灰色小字**，已殖民的是**白色**
+ *   · 星区名是**斜体、字距大、低饱和**
+ *
+ * ## 必须限数量
+ * 每个标签一个 Sprite，不能合批。所以：
+ *   · 势力名：域数条（≤8），代价可接受
+ *   · 星名：按"离本域中心近"挑前 N 条（默认每域 12 条），总 N×域数
  * 正式实现应改成"一张 canvas 画所有标签 + 一次 draw"（2D 就是这么干的），
- * 或按视口裁剪到十几条；本原型用数量上限先守住 draw calls 判据。
+ * 本原型用数量上限先守住 draw calls 判据。
  */
 function buildStarLabels(sc, opts) {
-  const maxLabels = (opts && opts.maxLabels) || 60;
+  const perDomain = (opts && opts.perDomainStars) || 12;
   const g = new THREE.Group();
-  const cx = (sc.bbox.minX + sc.bbox.maxX) / 2;
-  const cy = (sc.bbox.minY + sc.bbox.maxY) / 2;
-  const idx = [];
-  for (let i = 0; i < sc.counts.stars; i++) {
-    idx.push({ i, d: Math.hypot(sc.starPos[i * 3] - cx, sc.starPos[i * 3 + 1] - cy) });
-  }
-  idx.sort((a, b) => a.d - b.d);
-  const pick = idx.slice(0, Math.min(maxLabels, idx.length));
 
-  for (const { i } of pick) {
-    const name = sc.names[i];
-    if (!name) continue;
-    const tex = makeLabelTexture(name, { fontPx: 13 });
+  // ① 势力名（压在本域中心，大字、字距大）
+  for (const dom of sc.domains) {
+    const tex = makeLabelTexture(dom.name, {
+      fontPx: 15, spacing: 0.22, weight: 600,
+      fill: 'rgba(255,255,255,0.92)',
+    });
     const mat = new THREE.SpriteMaterial({
       map: tex, transparent: true, depthWrite: false, depthTest: false,
     });
     const sp = new THREE.Sprite(mat);
-    // 🔴 2026-11-25 修：第一版 hWorld = STAR_RADIUS*8 = 48 世界单位，
-    //    在 900 半径的星域里只占 5%，屏幕上约 3px —— **读不清**（截图里就是一团小字）。
-    //    参考图 `星域视图4.png` 里星名约 13px（1920 宽下），相对星域直径约 1.4%。
-    //    这里按"星域半径的 9%"给高度，1280 宽视口下约 14px —— 与参考图同量级。
-    const hWorld = sc.radius * 0.09;
-    sp.scale.set(hWorld * (tex.userData.aspect || 4), hWorld, 1);
-    sp.position.set(
-      sc.starPos[i * 3],
-      sc.starPos[i * 3 + 1] + STAR_RADIUS * 6,
-      sc.starPos[i * 3 + 2],
-    );
-    sp.renderOrder = 10;
+    // 势力名要比星名大：高度取星域的 13%
+    const hWorld = sc.radius * 0.13;
+    sp.scale.set(hWorld * (tex.userData.aspect || 6), hWorld, 1);
+    sp.position.set(dom.center.x, dom.center.y, 2);
+    sp.renderOrder = 9;
     g.add(sp);
     disposed.push(tex, mat, sp);
+  }
+
+  // ② 星名：**每个域**挑离本域中心最近的 N 颗（不是全图挑，否则域中心远离全图中心）
+  for (const dom of sc.domains) {
+    const cand = [];
+    for (let i = dom.starFrom; i < dom.starTo; i++) {
+      cand.push({
+        i,
+        d: Math.hypot(sc.starPos[i * 3] - dom.center.x, sc.starPos[i * 3 + 1] - dom.center.y),
+      });
+    }
+    cand.sort((a, b) => a.d - b.d);
+    const pick = cand.slice(0, Math.min(perDomain, cand.length));
+
+    // 星名灰度分级（MANIFEST）：未殖民 = 灰色小字，已殖民 = 白色。
+    // 原型没有殖民数据 —— 这里用**确定性哈希**模拟（同 id 恒定），
+    // 目的是把"两种灰度"的观感先做出来；正式实现改读真实字段。
+    for (const { i } of pick) {
+      const name = sc.names[i];
+      if (!name) continue;
+      const colonized = stableHash01('col|' + sc.ids[i]) > 0.35;
+      const tex = makeLabelTexture(name, {
+        fontPx: 12,
+        spacing: 0.10,
+        fill: colonized ? 'rgba(255,255,255,0.94)' : 'rgba(150,162,178,0.78)',
+      });
+      const mat = new THREE.SpriteMaterial({
+        map: tex, transparent: true, depthWrite: false, depthTest: false,
+      });
+      const sp = new THREE.Sprite(mat);
+      // 🔴 2026-11-25 修：第一版 hWorld = STAR_RADIUS*8 = 48 世界单位，
+      //    在 900 半径的星域里只占 5%，屏幕上约 3px —— 读不清。
+      //    改为"星域半径的 7%"（比势力名小一档），1280 宽下约 11px。
+      const hWorld = sc.radius * 0.07;
+      sp.scale.set(hWorld * (tex.userData.aspect || 4), hWorld, 1);
+      sp.position.set(
+        sc.starPos[i * 3],
+        sc.starPos[i * 3 + 1] + STAR_RADIUS * 6,
+        sc.starPos[i * 3 + 2],
+      );
+      sp.renderOrder = 10;
+      g.add(sp);
+      disposed.push(tex, mat, sp);
+    }
   }
   return g;
 }
@@ -624,6 +732,38 @@ function buildBatched(sc) {
     inst.instanceMatrix.needsUpdate = true;
     g.add(inst);
     disposed.push(mat, inst);
+  }
+
+  // ①c 归属环（观感：MANIFEST 记"有主的星外面套一圈帝国色环"）
+  //
+  // 做法：每个域一个**空心圆环**（RingGeometry）InstancedMesh，颜色 = 该域势力色。
+  // 环必须是 billboard（永远面向相机），否则相机一转就变成一条线。
+  // three 的 InstancedMesh 不自动做 billboard，所以这里用**一个大环 + 每帧朝相机**
+  // 的近似：环放在 z=0 平面（与画面几乎平行）时观感足够；相机压低到接近平面时
+  // 环会变扁 —— 这是本原型的已知取舍（正式实现应用 shader 做真 billboard）。
+  //
+  // 为什么环不画在恒星球内：归属环的语义是"这颗星归谁"，必须**比恒星大一圈**才看得见。
+  const ringGeo = new THREE.RingGeometry(STAR_RADIUS * 1.7, STAR_RADIUS * 2.5, 20);
+  disposed.push(ringGeo);
+  for (let di = 0; di < sc.domains.length; di++) {
+    const dom = sc.domains[di];
+    const count = dom.starTo - dom.starFrom;
+    if (count <= 0) continue;
+    const rmat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(dom.factionColor),
+      transparent: true, opacity: 0.85,
+      side: THREE.DoubleSide, depthWrite: false,
+    });
+    const rinst = new THREE.InstancedMesh(ringGeo, rmat, count);
+    rinst.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+    for (let k = 0; k < count; k++) {
+      const i = dom.starFrom + k;
+      m4.makeTranslation(sc.starPos[i * 3], sc.starPos[i * 3 + 1], sc.starPos[i * 3 + 2]);
+      rinst.setMatrixAt(k, m4);
+    }
+    rinst.instanceMatrix.needsUpdate = true;
+    g.add(rinst);
+    disposed.push(rmat, rinst);
   }
 
   // ①b 光晕：**一次 Points 画完全部**（观感 + 合批两个都要，见下方取舍记录）
@@ -709,7 +849,7 @@ function buildBatched(sc) {
   //    正式实现若要做"贴近看单颗恒星"，光晕应换成 billboard 几何而不是 Points。
 
   // ② 航道：一个 LineSegments（一次 draw call 画全部线段）
-  //    颜色按 MANIFEST：「只有一种青色（约 #4fd6d6），靠明暗分主次，不按类型换色」
+  //    颜色按 MANIFEST："只有一种青色（约 #4fd6d6），靠明暗分主次，不按类型换色"
   const lgeo = new THREE.BufferGeometry();
   lgeo.setAttribute('position', new THREE.BufferAttribute(sc.lanePos, 3));
   const lmat = new THREE.LineBasicMaterial({
@@ -737,30 +877,35 @@ function buildBatched(sc) {
   //   · 填充面（三角扇，z=0 平面）—— 让人看见"这一片是领土"
   //   · 轮廓线（稍抬高到 z=0.5，压在面上不被 z-fighting 吃掉）
   // 两者都是**平面**（所有顶点 z 相同），这就是"切片"而不是"体积"。
-  for (const b of sc.borders) {
-    // 三角扇：以第一个点为中心扇形剖分（轮廓是简单多边形，够用）
-    const verts = [];
-    const n = b.length / 3;
-    for (let i = 1; i < n - 1; i++) {
-      verts.push(b[0], b[1], b[2]);
-      verts.push(b[i * 3], b[i * 3 + 1], b[i * 3 + 2]);
-      verts.push(b[(i + 1) * 3], b[(i + 1) * 3 + 1], b[(i + 1) * 3 + 2]);
+  // 填充面与轮廓都**按星域分开**（每个域颜色不同，不能合并成一批）。
+  // 这是多星域带来的必然代价：域数 N → 边界批数 O(N)。
+  // 本原型 N ≤ 8，所以最多 8×5=40 批；正式实现若域数更多，应把同色域合并到一次 draw。
+  for (let di = 0; di < sc.domains.length; di++) {
+    const domCol = new THREE.Color(sc.domains[di].factionColor || BORDER_FILL);
+    for (const b of sc.bordersByDomain[di]) {
+      // 三角扇：以第一个点为中心扇形剖分（轮廓是简单多边形，够用）
+      const verts = [];
+      const n = b.length / 3;
+      for (let i = 1; i < n - 1; i++) {
+        verts.push(b[0], b[1], b[2]);
+        verts.push(b[i * 3], b[i * 3 + 1], b[i * 3 + 2]);
+        verts.push(b[(i + 1) * 3], b[(i + 1) * 3 + 1], b[(i + 1) * 3 + 2]);
+      }
+      const fgeo = new THREE.BufferGeometry();
+      fgeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(verts), 3));
+      // 填充色 = **势力色**（参考图 `星域视图1.jpg`：领土是一片半透明色块，颜色随势力）
+      const fmat = new THREE.MeshBasicMaterial({
+        color: domCol,
+        transparent: true, opacity: 0.14,
+        side: THREE.DoubleSide, depthWrite: false,
+      });
+      const fill = new THREE.Mesh(fgeo, fmat);
+      g.add(fill);
+      disposed.push(fgeo, fmat, fill);
     }
-    const fgeo = new THREE.BufferGeometry();
-    fgeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(verts), 3));
-    // 填充色 = **势力色**（参考图 `星域视图1.jpg`：领土是一片半透明色块，颜色随势力）
-    // 原来固定用一个蓝，看起来"所有星域都是同一个国家"。
-    const fmat = new THREE.MeshBasicMaterial({
-      color: new THREE.Color(sc.domain.factionColor || BORDER_FILL),
-      transparent: true, opacity: 0.14,
-      side: THREE.DoubleSide, depthWrite: false,
-    });
-    const fill = new THREE.Mesh(fgeo, fmat);
-    g.add(fill);
-    disposed.push(fgeo, fmat, fill);
   }
 
-  // ④ 轮廓线：**厚软带**（观感：MANIFEST 记「厚带双线结构：内 1px 亮线 + 外柔光 8~12px」；
+  // ④ 轮廓线：**厚软带**（观感：MANIFEST 记"厚带双线结构：内 1px 亮线 + 外柔光 8~12px"；
   //    对照 `refs/src/星域视图2.jpg` 量：边界带整体宽 8~12px，中心亮、两侧软）
   //
   // 🔴 关键限制：three 的 `LineBasicMaterial.linewidth` 在 WebGL 里**几乎总是 1**
@@ -784,9 +929,8 @@ function buildBatched(sc) {
     [0.000, 0.95, 'inner', 0.50],   // 内亮线：最后画、最亮
   ];
   // 势力色 → 边界用的亮/暗两档（同族色，不跳到金色，也别提成白色）
-  const factionCol = new THREE.Color(sc.domain.factionColor || BORDER_FILL);
   const WHITE = new THREE.Color(0xffffff);
-  const colOf = (key) => {
+  const colOf = (factionCol, key) => {
     const c = factionCol.clone();
     // 🔴 2026-11-25 修：第一版 inner 往白里提 0.55 → 边界变成**白色**，
     //    截图里整个星域像套了个白圈，势力色完全看不出来。
@@ -795,40 +939,44 @@ function buildBatched(sc) {
     c.lerp(WHITE, key === 'inner' ? 0.22 : 0.06);
     return c;
   };
-  for (const [offsetRatio, op, colorKey, zLift] of borderLayers) {
-    const segs = [];
-    for (const b of sc.borders) {
-      const n = b.length / 3;
-      if (n < 3) continue;
-      // 计算轮廓质心（用于"向外偏移"的方向）
-      let cx = 0, cy = 0;
-      for (let i = 0; i < n - 1; i++) { cx += b[i * 3]; cy += b[i * 3 + 1]; }
-      cx /= (n - 1); cy /= (n - 1);
-      const off = offsetRatio * sc.radius;
-      const at = (i) => {
-        const x = b[i * 3], y = b[i * 3 + 1];
-        if (!off) return [x, y];
-        const dx = x - cx, dy = y - cy;
-        const d = Math.hypot(dx, dy) || 1;
-        return [x + (dx / d) * off, y + (dy / d) * off];
-      };
-      for (let i = 0; i < n - 1; i++) {
-        const [ax, ay] = at(i);
-        const [bx2, by2] = at(i + 1);
-        segs.push(ax, ay, b[i * 3 + 2] + zLift);
-        segs.push(bx2, by2, b[(i + 1) * 3 + 2] + zLift);
+  // 每个星域 × 每层 → 一批（域数 ≤8 时最多 40 批，仍是常数）
+  for (let di = 0; di < sc.domains.length; di++) {
+    const factionCol = new THREE.Color(sc.domains[di].factionColor || BORDER_FILL);
+    for (const [offsetRatio, op, colorKey, zLift] of borderLayers) {
+      const segs = [];
+      for (const b of sc.bordersByDomain[di]) {
+        const n = b.length / 3;
+        if (n < 3) continue;
+        // 计算轮廓质心（用于"向外偏移"的方向）
+        let cx = 0, cy = 0;
+        for (let i = 0; i < n - 1; i++) { cx += b[i * 3]; cy += b[i * 3 + 1]; }
+        cx /= (n - 1); cy /= (n - 1);
+        const off = offsetRatio * sc.radius;
+        const at = (i) => {
+          const x = b[i * 3], y = b[i * 3 + 1];
+          if (!off) return [x, y];
+          const dx = x - cx, dy = y - cy;
+          const d = Math.hypot(dx, dy) || 1;
+          return [x + (dx / d) * off, y + (dy / d) * off];
+        };
+        for (let i = 0; i < n - 1; i++) {
+          const [ax, ay] = at(i);
+          const [bx2, by2] = at(i + 1);
+          segs.push(ax, ay, b[i * 3 + 2] + zLift);
+          segs.push(bx2, by2, b[(i + 1) * 3 + 2] + zLift);
+        }
       }
+      if (!segs.length) continue;
+      const geo4 = new THREE.BufferGeometry();
+      geo4.setAttribute('position', new THREE.BufferAttribute(new Float32Array(segs), 3));
+      const mat4 = new THREE.LineBasicMaterial({
+        color: colOf(factionCol, colorKey), transparent: true, opacity: op,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      });
+      const ln = new THREE.LineSegments(geo4, mat4);
+      g.add(ln);
+      disposed.push(geo4, mat4, ln);
     }
-    if (!segs.length) continue;
-    const geo4 = new THREE.BufferGeometry();
-    geo4.setAttribute('position', new THREE.BufferAttribute(new Float32Array(segs), 3));
-    const mat4 = new THREE.LineBasicMaterial({
-      color: colOf(colorKey), transparent: true, opacity: op,
-      blending: THREE.AdditiveBlending, depthWrite: false,
-    });
-    const ln = new THREE.LineSegments(geo4, mat4);
-    g.add(ln);
-    disposed.push(geo4, mat4, ln);
   }
 
   // ⑤ 星名标签（观感）：**默认关闭**，由 `setLabelsVisible(true)` 打开。
@@ -870,12 +1018,15 @@ function buildNaive(sc) {
 
   const bmat = new THREE.LineBasicMaterial({ color: 0xffd479, transparent: true, opacity: 0.85 });
   disposed.push(bmat);
-  for (const b of sc.borders) {
-    const bg = new THREE.BufferGeometry();
-    bg.setAttribute('position', new THREE.BufferAttribute(b, 3));
-    const bl = new THREE.Line(bg, bmat);
-    g.add(bl);
-    disposed.push(bg, bl);
+  // 对照组也按域拆（多域之后 bordersByDomain 是二维的）
+  for (const arr of sc.bordersByDomain) {
+    for (const b of arr) {
+      const bg = new THREE.BufferGeometry();
+      bg.setAttribute('position', new THREE.BufferAttribute(b, 3));
+      const bl = new THREE.Line(bg, bmat);
+      g.add(bl);
+      disposed.push(bg, bl);
+    }
   }
   return g;
 }
@@ -1062,6 +1213,7 @@ function switchMode(next) {
 
 function updateHud() {
   const c = SCENE_DATA.counts;
+  $('v-domains').textContent = c.domains;
   $('v-stars').textContent = c.stars;
   $('v-lanes').textContent = c.laneSegments;
   $('v-borders').textContent = c.borders;
@@ -1097,6 +1249,8 @@ async function boot() {
   scene.fog = null;
 
   camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 30000);
+  // 初始机位先给个占位值，真正的取景在拿到 SCENE_DATA 之后用 bbox 算（见下方 fitInitialCamera）。
+  // 为什么不能写死：单域时 900 半径够用，四域时范围会到 4000+，写死必然看不到全部。
   camera.position.set(0, -1500, 1200);
   camera.lookAt(0, 0, 0);
 
@@ -1104,8 +1258,8 @@ async function boot() {
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.enablePan = true;
-  controls.minDistance = 300;
-  controls.maxDistance = 9000;
+  controls.minDistance = 200;
+  controls.maxDistance = 40000;
 
   scene.add(new THREE.AmbientLight(0xffffff, 0.55));
   const key = new THREE.DirectionalLight(0xffffff, 0.9);
@@ -1115,9 +1269,10 @@ async function boot() {
   // 规模可由 URL 参数给（探针用 ?stars=N 压测），默认 30（A 档 120 星 ÷ 4 势力）
   const qs = new URLSearchParams(location.search);
   const starCount = Math.max(1, Math.min(500, Number(qs.get('stars')) || 30));
-  const fx = makeDomainFixture({ stars: starCount });
+  const domainCount = Math.max(1, Math.min(8, Number(qs.get('domains')) || 4));
+  const fx = makeDomainFixture({ stars: starCount, domains: domainCount });
   SCENE_DATA = buildScene(fx);
-  // 背景三层（星场 / 星云 / 亮核）：用户 2026-11-25「继续做」后补的观感件。
+  // 背景三层（星场 / 星云 / 亮核）：用户 2026-11-25"继续做"后补的观感件。
   // 放在"改观感"这一刀里，而不是等交互做完 —— 用户明确说先补观感。
   // ⚠️ 包 try/catch：背景是**纯装饰**，它挂了不许把整个原型带崩（第一版就是这里抛错，
   //    日志只停在上一条，看起来像"页面卡住了"）。出错要能看见原因。
@@ -1175,18 +1330,33 @@ async function boot() {
       renderer.render(scene, camera);
       return { visible: !!v, labels: n, calls: renderer.info.render.calls };
     },
-    // 背景开关（用于「有没有背景差别多大」的对照）
+    // 背景开关（用于"有没有背景差别多大"的对照）
     setBackgroundVisible: (v) => {
       if (backgroundGroup) backgroundGroup.visible = !!v;
       renderer.render(scene, camera);
       return { visible: !!v };
     },
   };
-  log(`数据：${SCENE_DATA.counts.stars} 恒星系 / ${SCENE_DATA.counts.laneSegments} 航道段 / ` +
-      `${SCENE_DATA.counts.borders} 条边界`, 'hi');
+  log(`数据：${SCENE_DATA.counts.domains} 星域 / ${SCENE_DATA.counts.stars} 恒星系 / `
+    + `${SCENE_DATA.counts.laneSegments} 航道段 / ${SCENE_DATA.counts.borders} 条边界`, 'hi');
   log(`无合批时会是 ${SCENE_DATA.counts.drawCallsIfNaive} 个 draw call`, 'hi');
 
   switchMode('batched');
+
+  // 初始取景：按实际 bbox 算，不写死。
+  // 单域 900 半径与四域 4000+ 半径差 4 倍，写死任何一个都会让另一半看不到全貌。
+  {
+    const bb = SCENE_DATA.bbox;
+    const spanX = bb.maxX - bb.minX;
+    const spanY = bb.maxY - bb.minY;
+    const cx = (bb.minX + bb.maxX) / 2;
+    const cy = (bb.minY + bb.maxY) / 2;
+    const dist = Math.max(spanX, spanY) * 1.25;
+    camera.position.set(cx, cy - dist, dist * 0.62);
+    controls.target.set(cx, cy, 0);
+    controls.update();
+    renderer.render(scene, camera);
+  }
 
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;

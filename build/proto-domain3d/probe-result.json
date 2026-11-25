@@ -1,41 +1,42 @@
 {
   "counts": {
-    "stars": 300,
-    "laneSegments": 384,
-    "borders": 1,
-    "drawCallsIfBatched": 3,
-    "drawCallsIfNaive": 685
+    "stars": 120,
+    "domains": 4,
+    "laneSegments": 145,
+    "borders": 4,
+    "drawCallsIfBatched": 0,
+    "drawCallsIfNaive": 269
   },
   "result": {
     "batched": {
       "n": 301,
       "median": 16.699999999999818,
       "p95": 16.800000000000182,
-      "max": 16.900000000000546,
-      "avg": 16.666777408637873,
-      "calls": 19,
+      "max": 16.899999999999636,
+      "avg": 16.6671096345515,
+      "calls": 41,
       "renderMedian": 0.40000009536743164,
-      "renderP95": 0.5,
-      "renderMax": 0.9000000953674316,
-      "renderAvg": 0.38704318461624093,
+      "renderP95": 0.7000002861022949,
+      "renderMax": 1.1999998092651367,
+      "renderAvg": 0.4554817288420921,
       "renderN": 301
     },
     "naive": {
-      "n": 300,
+      "n": 301,
       "median": 16.69999999999891,
-      "p95": 16.80000000000109,
-      "max": 17.19999999999891,
-      "avg": 16.66633333333333,
-      "calls": 691,
-      "renderMedian": 2.1999998092651367,
-      "renderP95": 5.700000286102295,
-      "renderMax": 6.900000095367432,
-      "renderAvg": 2.718999996185303,
-      "renderN": 300
+      "p95": 16.799999999999272,
+      "max": 16.899999999999636,
+      "avg": 16.666445182724253,
+      "calls": 275,
+      "renderMedian": 0.8000001907348633,
+      "renderP95": 1.6999998092651367,
+      "renderMax": 3.5999999046325684,
+      "renderAvg": 0.9076411827062055,
+      "renderN": 301
     }
   },
   "meta": {
-    "stars": 300,
+    "stars": 30,
     "headless": true,
     "port": 9333
   }
