@@ -40,6 +40,16 @@ __pycache__/
 .test-edge-profile/
 # 3D 真机截图用的隔离 Edge profile（test_178 抓 3D 留证时拉起）
 .test-edge-profile-3d/
+# 🔴 **任何** Edge/Chromium 的 --user-data-dir 残留（2026-11-25 踩过，代价很大）
+#    当天 `probe_domain3d.py` 把 profile 放进了 build/proto-domain3d/.edge-profile，
+#    然后 `git add -A` 把 **1457 个浏览器文件**（缓存、扩展、LevelDB、数据库）
+#    连同 141 万行一起提交了。虽然只是个本地提交、已 reset 掉，但教训是通用的：
+#    **浏览器 profile 目录必须是通配忽略，不能靠"我记得别提交"**。
+#    这一类目录的特征：名字里带 edge-profile / chrome-profile / user-data。
+*edge-profile*/
+*chrome-profile*/
+.edge-profile/
+.chrome-profile/
 # 常驻实验室（scripts/tests/tools/_lab.py up）残留：Edge 用户目录 + 进程号
 .lab-edge-profile/
 .lab-pids.json

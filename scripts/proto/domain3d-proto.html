@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>E-4 性能原型 · 星域内 3D 总览（合批验证）</title>
+<!--
+  ============================================================================
+  E-4 性能原型（2026-11-25）
+  ============================================================================
+
+  ## 这个原型**只回答一个问题**
+
+  合批之后，30 个恒星系 + 航道 + 星域边界的域内 3D，能不能跑到 30fps 以上？
+
+  不做的事（刻意）：不接产品、不改数据、不做交互细节、不做美观。
+  交互只有：拖拽旋转 / 滚轮缩放（够验证帧率）。命中与点选留到正式实现。
+
+  ## 为什么要单独做原型
+
+  当年搁置 E-4 的理由就是"性能"。而性能的真实瓶颈是 **draw call 数**，不是顶点数 ——
+  30 个恒星系 × 每系一个 Mesh + 每条航道一个 Line = 几百个 draw call，星域一多必掉帧。
+  合批之后是 3 批（恒星 InstancedMesh / 航道 LineSegments / 边界 LineSegments）。
+
+  所以这个原型要**同时量两件事**：
+    ① 合批版（3 批）的实际帧率
+    ② 逐对象版（N 批）的实际帧率 —— 这是**对照组**，没有它就无法证明合批有用
+
+  对照组是必需的：只量合批版、然后看到一个不错的数字，不能证明"是合批带来的改善"，
+  也可能是"这台机器本来就快、逐对象也不慢"。**没有对照就没有结论。**
+
+  ## 怎么跑
+
+  直接双击打开（file:// 即可，不需要起服务器），或：
+    python -m http.server 8080  →  http://localhost:8080/build/proto-domain3d/domain3d-proto.html
+
+  需要能加载 three（走 CDN；离线时请把 three 放到同目录并改 importmap）。
+  页面里点"开始量"→ 自动跑两轮各 5 秒 → 出对照表。
+-->
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #07090f; color: #d6dee8;
+    font: 13px/1.5 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; overflow: hidden; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+  canvas:active { cursor: grabbing; }
+
+  .hud { position: fixed; top: 12px; left: 12px; padding: 12px 14px; border-radius: 10px;
+    background: rgba(12, 16, 24, .86); border: 1px solid #263241; min-width: 268px;
+    box-shadow: 0 8px 28px rgba(0,0,0,.6); backdrop-filter: blur(6px); }
+  .hud h1 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: #e8eef6; letter-spacing: .02em; }
+  .hud .sub { color: #7f8fa4; font-size: 11px; margin-bottom: 10px; }
+  .row { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0;
+    font-variant-numeric: tabular-nums; }
+  .row .k { color: #8695a8; }
+  .row .v { color: #cfe0f2; font-weight: 600; }
+  .row.bad .v { color: #ff8b7b; }
+  .row.good .v { color: #6ee7a8; }
+  .sep { height: 1px; background: #223044; margin: 9px 0; }
+
+  button { width: 100%; padding: 8px 12px; margin-top: 4px; border-radius: 7px; cursor: pointer;
+    border: 1px solid #2f4a66; background: #16283a; color: #cfe0f2; font-size: 12.5px; font-weight: 600; }
+  button:hover:not(:disabled) { background: #1d3purple; background: #1d344a; border-color: #3d5a7a; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary { background: #1f4a34; border-color: #2e6b4c; }
+  button.primary:hover:not(:disabled) { background: #275c42; }
+
+  .verdict { margin-top: 10px; padding: 9px 11px; border-radius: 8px; font-size: 12px;
+    line-height: 1.55; display: none; }
+  .verdict.show { display: block; }
+  .verdict.pass { background: rgba(46, 160, 100, .14); border: 1px solid rgba(70, 200, 130, .4); color: #9ef0c4; }
+  .verdict.fail { background: rgba(200, 70, 60, .14); border: 1px solid rgba(230, 100, 90, .4); color: #ffb3a8; }
+  .verdict b { color: #fff; }
+
+  .log { position: fixed; bottom: 12px; left: 12px; right: 12px; max-height: 132px; overflow: auto;
+    padding: 9px 12px; border-radius: 9px; background: rgba(12, 16, 24, .82);
+    border: 1px solid #222f3f; font: 11px/1.6 Consolas, "Cascadia Mono", monospace; color: #8fa2b8; }
+  .log .ok { color: #6ee7a8; } .log .hi { color: #ffd479; } .log .err { color: #ff8b7b; }
+
+  .tip { position: fixed; right: 14px; bottom: 14px; color: #55677d; font-size: 11px; text-align: right; }
+</style>
+</head>
+<body>
+<div id="app"><canvas id="c"></canvas></div>
+
+<div class="hud">
+  <h1>E-4 性能原型 · 域内 3D</h1>
+  <div class="sub">只验一件事：合批能不能撑住帧率</div>
+
+  <div class="row"><span class="k">恒星系（本星域）</span><span class="v" id="v-stars">–</span></div>
+  <div class="row"><span class="k">航道段</span><span class="v" id="v-lanes">–</span></div>
+  <div class="row"><span class="k">星域边界</span><span class="v" id="v-borders">–</span></div>
+  <div class="sep"></div>
+  <div class="row"><span class="k">当前模式</span><span class="v" id="v-mode">–</span></div>
+  <div class="row"><span class="k">draw calls</span><span class="v" id="v-calls">–</span></div>
+  <div class="row"><span class="k">帧率</span><span class="v" id="v-fps">–</span></div>
+  <div class="row"><span class="k">帧时 中位 / p95</span><span class="v" id="v-frame">–</span></div>
+
+  <button id="btn-run" class="primary">开始量（两轮各 5 秒）</button>
+  <button id="btn-batched">切到：合批版</button>
+  <button id="btn-naive">切到：逐对象版（对照组）</button>
+
+  <div class="verdict" id="verdict"></div>
+</div>
+
+<div class="log" id="log"></div>
+<div class="tip">拖拽旋转 · 滚轮缩放</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.128.0/build/three.module.js",
+    "three/examples/jsm/controls/OrbitControls.js": "https://unpkg.com/three@0.128.0/examples/jsm/controls/OrbitControls.js"
+  }
+}
+</script>
+
+<script type="module">
+// ═══════════════════════════════════════════════════════════════════════════
+// 0. 基础设施
+// ═══════════════════════════════════════════════════════════════════════════
+const $ = (id) => document.getElementById(id);
+const LOG = $('log');
+function log(msg, cls) {
+  const d = document.createElement('div');
+  if (cls) d.className = cls;
+  d.textContent = msg;
+  LOG.appendChild(d);
+  LOG.scrollTop = LOG.scrollHeight;
+}
+
+/** 与产品侧同一份稳定哈希（避免原型和产品两套 z 规则） */
+function stableHash01(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h / 4294967296;
+}
+
+/** 确定性 PRNG（mulberry32）—— 原型**禁止 Math.random**，否则两次跑的数据不一样，量的数没意义 */
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 1. 造一份"一个星域"的假数据
+//    ⚠️ 形状与 domain3dScene.js 的输入完全一致 —— 原型验的必须是真形状，
+//       否则量出来的数字不能外推到产品。
+// ═══════════════════════════════════════════════════════════════════════════
+function makeDomainFixture(opts = {}) {
+  const count = opts.stars ?? 30;            // 默认 30：A 档 120 星 ÷ 4 势力
+  const radius = opts.radius ?? 900;
+  const seed = opts.seed ?? 20261125;
+  const rnd = mulberry32(seed);
+
+  const stars = [];
+  for (let i = 0; i < count; i++) {
+    // 极坐标撒点，内密外疏（与生成器的盘面观感一致）
+    const u = rnd();
+    const rr = radius * Math.sqrt(u) * 0.92;
+    const ang = rnd() * Math.PI * 2;
+    stars.push({
+      id: `d31|star_${i}`,
+      name: `星${i + 1}`,
+      x: Math.cos(ang) * rr,
+      y: Math.sin(ang) * rr,
+    });
+  }
+
+  // 航道：最近邻 + 少量成环（够密，能代表真实拓扑的量级）
+  const laned = new Set();
+  const lanes = [];
+  for (let i = 0; i < stars.length; i++) {
+    const a = stars[i];
+    // 找最近的两个邻居
+    const near = stars
+      .map((b, j) => ({ j, d: j === i ? Infinity : Math.hypot(b.x - a.x, b.y - a.y) }))
+      .sort((p, q) => p.d - q.d)
+      .slice(0, 2);
+    for (const n of near) {
+      const b = stars[n.j];
+      const key = a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`;
+      if (laned.has(key)) continue;
+      // 太长的边不要（否则星域图变成蜘蛛网）
+      if (n.d > radius * 0.45) continue;
+      laned.add(key);
+      lanes.push({ id: `hl_${lanes.length}`, from: a.id, to: b.id });
+    }
+  }
+
+  // 星域边界：一圈圆（真实现里来自 territory.js 的 φ 场轮廓）
+  const pts = [];
+  for (let i = 0; i < 48; i++) {
+    const t = (i / 48) * Math.PI * 2;
+    const wob = 1 + 0.06 * Math.sin(t * 3 + 1.2);
+    pts.push({ x: Math.cos(t) * radius * 1.02 * wob, y: Math.sin(t) * radius * 1.02 * wob });
+  }
+
+  return { domain: { id: 'd31', name: '原型星域' }, stars, hyperlanes: lanes, borders: [{ points: pts }], radius };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 2. 场景数据（与 domain3dScene.js 同算法；原型内联一份，避免依赖构建）
+// ═══════════════════════════════════════════════════════════════════════════
+const Z_THICKNESS = 0.18;
+const STAR_RADIUS = 26;
+
+function buildScene(fx) {
+  const zHalf = Z_THICKNESS * fx.radius;
+  const ids = [], names = [], pos = new Float32Array(fx.stars.length * 3);
+  fx.stars.forEach((s, i) => {
+    ids.push(s.id); names.push(s.name);
+    pos[i * 3] = s.x; pos[i * 3 + 1] = s.y;
+    pos[i * 3 + 2] = (stableHash01(s.id) * 2 - 1) * zHalf;
+  });
+
+  const idx = new Map(ids.map((id, i) => [id, i]));
+  const seen = new Set();
+  const lanePos = [];
+  for (const hl of fx.hyperlanes) {
+    if (!idx.has(hl.from) || !idx.has(hl.to) || hl.from === hl.to) continue;
+    const key = hl.from < hl.to ? `${hl.from}|${hl.to}` : `${hl.to}|${hl.from}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const a = idx.get(hl.from), b = idx.get(hl.to);
+    lanePos.push(pos[a * 3], pos[a * 3 + 1], pos[a * 3 + 2]);
+    lanePos.push(pos[b * 3], pos[b * 3 + 1], pos[b * 3 + 2]);
+  }
+
+  const borders = fx.borders.map((b) => {
+    const arr = [];
+    for (const p of b.points) arr.push(p.x, p.y, 0);
+    arr.push(b.points[0].x, b.points[0].y, 0);
+    return new Float32Array(arr);
+  });
+
+  return {
+    ids, names, starPos: pos,
+    lanePos: new Float32Array(lanePos),
+    borders,
+    counts: {
+      stars: fx.stars.length,
+      laneSegments: lanePos.length / 6,
+      borders: borders.length,
+      drawCallsIfBatched: 3,
+      drawCallsIfNaive: fx.stars.length + (lanePos.length / 6) + borders.length,
+    },
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 3. three 初始化
+// ═══════════════════════════════════════════════════════════════════════════
+let THREE, OrbitControls;
+let renderer, scene, camera, controls;
+let batchedGroup = null, naiveGroup = null;
+let mode = 'batched';
+let disposed = [];
+
+function makeStarGeometry() {
+  // 低段数：域内总览看不见多边形边界，但段数直接乘实例数
+  return new THREE.SphereGeometry(STAR_RADIUS, 12, 8);
+}
+
+// ── 合批版：3 批 ─────────────────────────────────────────────────────────
+function buildBatched(sc) {
+  const g = new THREE.Group();
+
+  // ① 恒星：InstancedMesh（一次 draw call 画全部）
+  const geo = makeStarGeometry();
+  const mat = new THREE.MeshLambertMaterial({ color: 0xffe9b8, emissive: 0x9a7b3a });
+  const inst = new THREE.InstancedMesh(geo, mat, sc.counts.stars);
+  inst.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+  const m4 = new THREE.Matrix4();
+  for (let i = 0; i < sc.counts.stars; i++) {
+    m4.makeTranslation(sc.starPos[i * 3], sc.starPos[i * 3 + 1], sc.starPos[i * 3 + 2]);
+    inst.setMatrixAt(i, m4);
+  }
+  inst.instanceMatrix.needsUpdate = true;
+  g.add(inst);
+  disposed.push(geo, mat, inst);
+
+  // ② 航道：一个 LineSegments（一次 draw call 画全部线段）
+  const lgeo = new THREE.BufferGeometry();
+  lgeo.setAttribute('position', new THREE.BufferAttribute(sc.lanePos, 3));
+  const lmat = new THREE.LineBasicMaterial({ color: 0x64c8e8, transparent: true, opacity: 0.55 });
+  const lines = new THREE.LineSegments(lgeo, lmat);
+  g.add(lines);
+  disposed.push(lgeo, lmat, lines);
+
+  // ③ 边界：一个 LineSegments（把每条轮廓的段拼进一个 buffer）
+  const segs = [];
+  for (const b of sc.borders) {
+    for (let i = 0; i < b.length / 3 - 1; i++) {
+      segs.push(b[i * 3], b[i * 3 + 1], b[i * 3 + 2]);
+      segs.push(b[(i + 1) * 3], b[(i + 1) * 3 + 1], b[(i + 1) * 3 + 2]);
+    }
+  }
+  const bgeo = new THREE.BufferGeometry();
+  bgeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(segs), 3));
+  const bmat = new THREE.LineBasicMaterial({ color: 0xffd479, transparent: true, opacity: 0.85 });
+  const blines = new THREE.LineSegments(bgeo, bmat);
+  g.add(blines);
+  disposed.push(bgeo, bmat, blines);
+
+  return g;
+}
+
+// ── 逐对象版（对照组）：N 批 ────────────────────────────────────────────
+function buildNaive(sc) {
+  const g = new THREE.Group();
+  const geo = makeStarGeometry();
+  const mat = new THREE.MeshLambertMaterial({ color: 0xffe9b8, emissive: 0x9a7b3a });
+  disposed.push(geo, mat);
+
+  for (let i = 0; i < sc.counts.stars; i++) {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(sc.starPos[i * 3], sc.starPos[i * 3 + 1], sc.starPos[i * 3 + 2]);
+    g.add(m);
+  }
+
+  const lmat = new THREE.LineBasicMaterial({ color: 0x64c8e8, transparent: true, opacity: 0.55 });
+  disposed.push(lmat);
+  for (let i = 0; i < sc.counts.laneSegments; i++) {
+    const lg = new THREE.BufferGeometry();
+    lg.setAttribute('position', new THREE.BufferAttribute(sc.lanePos.slice(i * 6, i * 6 + 6), 3));
+    const ln = new THREE.Line(lg, lmat);
+    g.add(ln);
+    disposed.push(lg, ln);
+  }
+
+  const bmat = new THREE.LineBasicMaterial({ color: 0xffd479, transparent: true, opacity: 0.85 });
+  disposed.push(bmat);
+  for (const b of sc.borders) {
+    const bg = new THREE.BufferGeometry();
+    bg.setAttribute('position', new THREE.BufferAttribute(b, 3));
+    const bl = new THREE.Line(bg, bmat);
+    g.add(bl);
+    disposed.push(bg, bl);
+  }
+  return g;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 4. 帧率测量
+// ═══════════════════════════════════════════════════════════════════════════
+const frameSamples = [];
+let measuring = false, measureUntil = 0, measureLabel = '';
+
+function pushFrame(dt) {
+  if (!measuring) return;
+  frameSamples.push(dt);
+  if (performance.now() >= measureUntil) {
+    measuring = false;
+    finishMeasure();
+  }
+}
+
+function stats(arr) {
+  const a = arr.slice().sort((x, y) => x - y);
+  const pick = (q) => a[Math.min(a.length - 1, Math.max(0, Math.floor(a.length * q)))];
+  const sum = a.reduce((s, v) => s + v, 0);
+  return { n: a.length, median: pick(0.5), p95: pick(0.95), max: a[a.length - 1], avg: sum / Math.max(1, a.length) };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 4b. **帧时口径修正（2026-11-25 第一跑踩到的坑）**
+//
+// 第一跑量出"合批 16.70ms / 逐对象 16.70ms"—— 两边一模一样，而且正好是 60fps 的 16.67ms。
+// 那不是"两版一样快"，是 **rAF 被 vsync 拍平了**：`renderer.render()` 若只花 3ms，
+// 浏览器照样等到下一个刷新点才回调 → 量到的是刷新周期，不是渲染耗时。
+// 在这种口径下"合批加速 1.0×"是**假的**，继续调会得出"合批没用"的错误结论。
+//
+// 正确口径：用 `performance.now()` 夹住 `renderer.render()` 本身，
+// 量**同步渲染耗时**（draw call 提交 + GPU 命令编码），这才是合批真正改善的量。
+// 同时保留原帧时（vsync 口径），两个数一起报 —— 帧时告诉我们"卡不卡"，
+// 渲染耗时告诉我们"有没有余量"。
+// ═══════════════════════════════════════════════════════════════════════════
+const renderSamples = [];
+
+const RESULT = {};
+// 挂到 window：外部探针（probe_domain3d.py）要读它。模块作用域里的 const 外部看不见。
+window.RESULT = RESULT;
+
+function beginMeasure(label) {
+  frameSamples.length = 0;
+  renderSamples.length = 0;
+  measuredCalls = 0;
+  measureLabel = label;
+  measuring = true;
+  measureUntil = performance.now() + 5000;
+  log(`开始量：${label}（5 秒）`, 'hi');
+  $('btn-run').disabled = true;
+}
+
+let measuredCalls = 0;
+
+function finishMeasure() {
+  // 两个口径一起报：
+  //   · frames  = rAF 帧时（vsync 拍平，只反映"卡不卡"）
+  //   · render  = renderer.render() 同步耗时（合批真正改善的量）
+  const f = stats(frameSamples);
+  const r = stats(renderSamples);
+  RESULT[mode] = {
+    ...f,
+    calls: measuredCalls,
+    renderMedian: r.median,
+    renderP95: r.p95,
+    renderMax: r.max,
+    renderAvg: r.avg,
+    renderN: r.n,
+  };
+  log(`${measureLabel}：${f.n} 帧 · 帧时中位 ${f.median.toFixed(2)}ms · `
+    + `**渲染中位 ${r.median.toFixed(3)}ms** · p95 ${r.p95.toFixed(3)}ms · calls ${measuredCalls}`, 'ok');
+}
+
+async function runAll() {
+  $('verdict').className = 'verdict';
+  // 先量合批
+  switchMode('batched');
+  await new Promise((r) => setTimeout(r, 800));   // 让上一帧的抖动过去
+  beginMeasure('合批版');
+  await sleep(5400);
+  // 再量逐对象
+  switchMode('naive');
+  await new Promise((r) => setTimeout(r, 800));
+  beginMeasure('逐对象版（对照）');
+  await sleep(5400);
+
+  $('btn-run').disabled = false;
+  showVerdict();
+}
+
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+function showVerdict() {
+  const b = RESULT.batched, n = RESULT.naive;
+  if (!b || !n) return;
+  const fpsB = 1000 / b.median, fpsN = 1000 / n.median;
+  const pass = fpsB >= 30;
+  const v = $('verdict');
+  v.className = 'verdict show ' + (pass ? 'pass' : 'fail');
+  v.innerHTML =
+    `<b>结论：${pass ? 'B 方案可行' : 'B 方案有风险'}</b><br>` +
+    `合批版 中位帧时 <b>${b.median.toFixed(2)}ms</b>（${fpsB.toFixed(1)}fps），` +
+    `逐对象 <b>${n.median.toFixed(2)}ms</b>（${fpsN.toFixed(1)}fps）<br>` +
+    `合批快 <b>${(n.median / Math.max(0.001, b.median)).toFixed(1)}×</b>；` +
+    `draw calls <b>${b.calls}</b> vs <b>${n.calls}</b><br>` +
+    `<span style="opacity:.75">判据：合批版中位 ≤ 33ms（30fps）。` +
+    `${pass ? '剩余预算可用于交互与观感。' : '需要先减实例数或换渲染方式，别急着做正式实现。'}</span>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 5. 模式切换
+// ═══════════════════════════════════════════════════════════════════════════
+let SCENE_DATA = null;
+// 挂到 window 供外部探针读取（模块作用域的 let 外部看不见）
+
+function switchMode(next) {
+  mode = next;
+  if (batchedGroup) scene.remove(batchedGroup);
+  if (naiveGroup) scene.remove(naiveGroup);
+  if (next === 'batched') {
+    batchedGroup = buildBatched(SCENE_DATA);
+    scene.add(batchedGroup);
+  } else {
+    naiveGroup = buildNaive(SCENE_DATA);
+    scene.add(naiveGroup);
+  }
+  // 强制立即渲染一帧，让 renderer.info 记账（three 的 info 只在渲染时更新）
+  renderer.render(scene, camera);
+  measuredCalls = renderer.info.render.calls;
+  updateHud();
+}
+
+function updateHud() {
+  const c = SCENE_DATA.counts;
+  $('v-stars').textContent = c.stars;
+  $('v-lanes').textContent = c.laneSegments;
+  $('v-borders').textContent = c.borders;
+  $('v-mode').textContent = mode === 'batched' ? '合批版（3 批）' : '逐对象版（对照组）';
+  $('v-calls').textContent = renderer ? renderer.info.render.calls : '–';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 6. 启动
+// ═══════════════════════════════════════════════════════════════════════════
+async function boot() {
+  try {
+    THREE = await import('three');
+    const oc = await import('three/examples/jsm/controls/OrbitControls.js');
+    OrbitControls = oc.OrbitControls;
+  } catch (err) {
+    log('three 加载失败（离线？）：' + err.message, 'err');
+    $('btn-run').disabled = true;
+    return;
+  }
+
+  const canvas = $('c');
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(1);   // 与 System3DView 同口径：像素比封顶，别被 4K 屏的 DPR 骗了
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x07090f);
+  scene.fog = new THREE.FogExp2(0x07090f, 0.00016);
+
+  camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 30000);
+  camera.position.set(0, -1500, 1200);
+  camera.lookAt(0, 0, 0);
+
+  controls = new OrbitControls(camera, canvas);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.enablePan = true;
+  controls.minDistance = 300;
+  controls.maxDistance = 9000;
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+  const key = new THREE.DirectionalLight(0xffffff, 0.9);
+  key.position.set(600, -900, 1400);
+  scene.add(key);
+
+  // 规模可由 URL 参数给（探针用 ?stars=N 压测），默认 30（A 档 120 星 ÷ 4 势力）
+  const qs = new URLSearchParams(location.search);
+  const starCount = Math.max(1, Math.min(500, Number(qs.get('stars')) || 30));
+  const fx = makeDomainFixture({ stars: starCount });
+  SCENE_DATA = buildScene(fx);
+  window.SCENE_DATA = SCENE_DATA;   // 探针要读 counts
+  window.RESULT = RESULT;
+  // 切换模式与测量入口也挂出去：探针不该模拟点按钮（按钮文案会改，DOM 会变）
+  window.__proto = {
+    switchMode: (m) => switchMode(m),
+    runAll: () => runAll(),
+    result: () => RESULT,
+    info: () => ({ calls: renderer.info.render.calls, mode }),
+  };
+  log(`数据：${SCENE_DATA.counts.stars} 恒星系 / ${SCENE_DATA.counts.laneSegments} 航道段 / ` +
+      `${SCENE_DATA.counts.borders} 条边界`, 'hi');
+  log(`无合批时会是 ${SCENE_DATA.counts.drawCallsIfNaive} 个 draw call`, 'hi');
+
+  switchMode('batched');
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight, false);
+  });
+
+  $('btn-run').addEventListener('click', runAll);
+  $('btn-batched').addEventListener('click', () => switchMode('batched'));
+  $('btn-naive').addEventListener('click', () => switchMode('naive'));
+
+  // 主循环
+  let last = performance.now();
+  function loop(now) {
+    requestAnimationFrame(loop);
+    const dt = now - last;
+    last = now;
+    controls.update();
+    // 夹住 render()：这是合批真正改善的量（见上方 4b 的口径说明）
+    const t0 = performance.now();
+    renderer.render(scene, camera);
+    const t1 = performance.now();
+    if (measuring) {
+      renderSamples.push(t1 - t0);
+      measuredCalls = Math.max(measuredCalls, renderer.info.render.calls);
+    }
+    pushFrame(dt);
+    if (Math.random() < 0.08) {   // 这个 Math.random 只影响 HUD 刷新频率，不影响数据
+      $('v-fps').textContent = (1000 / Math.max(0.001, dt)).toFixed(0) + ' fps';
+      $('v-frame').textContent = dt.toFixed(1) + ' ms';
+      $('v-calls').textContent = renderer.info.render.calls;
+    }
+  }
+  requestAnimationFrame(loop);
+  log('就绪 —— 点"开始量"跑两轮对照', 'ok');
+}
+
+boot();
+</script>
+</body>
+</html>
