@@ -205,11 +205,12 @@ def main():
         if isinstance(lab, dict):
             print(f'星名标签已开：{lab.get("labels")} 条，draw calls {lab.get("calls")}')
 
-        # 相机距离按"整幅盘面占满视口"来定。
-        # 多域之后范围变大：用页面里的 bbox 算，不写死（单域 900 / 四域 4000+ 差 4 倍）。
-        # ⚠️ 但全景不该真的"装下全部"—— 那样每个星域只剩一点点。
-        #    参考图 `星域视图1.jpg` 是**星域填满画面**的构图，不是"全部星域都完整可见"。
-        #    所以只取跨度的 0.62，让画面被领土占满（边缘允许出血）。
+        # 取景：**正交投影下要用 fit()（改 frustum），不是靠相机距离**。
+        #
+        # 🔴 2026-11-25 用户反馈："很扁看不清，不如原来平面平铺。现在稍微远一点的东西就看不清。"
+        #    → 换成正交投影（群星就是这么做的）。之后取景的语义变了：
+        #      透视：取景 = 相机退多远；正交：取景 = 视锥多大（camera.left/right/top/bottom）。
+        #      继续调 set_camera 的距离**不会有任何缩放效果**，只会改倾角。
         bb = cdp.eval("JSON.stringify(window.SCENE_DATA.bbox)")
         if isinstance(bb, str):
             try:
@@ -222,18 +223,29 @@ def main():
             cy = (bb['minY'] + bb['maxY']) / 2
         else:
             span, cx, cy = 1800, 0, 0
-        R = span / 2 * 0.62
-        print(f'场景跨度 {span:.0f}，中心 ({cx:.0f}, {cy:.0f})，取景半径 {R:.0f}')
+        R = span / 2
+        # 🔴 2026-11-25：第一版 padding 1.02 → 画面四周留白太多，四个星域只占屏幕中间一条。
+        #    参考图 `星域视图1.jpg` 是**领土填满画面**。改成 0.72（负 padding = 放大裁边），
+        #    让星域占满视口；边界允许出血到画面外（截图里本来就只关心领土本身）。
+        fit = cdp.eval("(() => JSON.stringify(window.__proto.fit(0.72)))()")
+        if isinstance(fit, str):
+            try:
+                fit = json.loads(fit)
+            except ValueError:
+                fit = None
+        print(f'场景跨度 {span:.0f}，中心 ({cx:.0f}, {cy:.0f})')
+        if isinstance(fit, dict):
+            print(f'正交取景：ortho={fit.get("ortho")} halfH={fit.get("halfH"):.0f} zoom={fit.get("zoom")}')
 
         # ── s1 默认全景：相机在斜上方 35°，能同时看见"盘面 + 切片 + 薄层"
         print('拍 s1 默认全景…')
-        set_camera(cdp, (cx, cy - R * 1.9, R * 1.15), (cx, cy, 0))
+        set_camera(cdp, (cx, cy - R * 1.6, R * 0.45), (cx, cy, 0))
         shots.append(shoot(cdp, 's1-overview'))
 
         # ── s2 压低视角：这是判断"薄层有多薄"最直观的一张
         #    相机几乎贴到盘面高度（z 只比 0 高一点点），侧面看过去
         print('拍 s2 低视角（看薄层有多薄）…')
-        set_camera(cdp, (cx, cy - R * 2.1, R * 0.10), (cx, cy, 0))
+        set_camera(cdp, (cx, cy - R * 2.0, R * 0.18), (cx, cy, 0))
         shots.append(shoot(cdp, 's2-low'))
 
         # ── s3 贴近：看恒星与航道的分辨率
@@ -246,7 +258,7 @@ def main():
         #       于是两张图指纹相同，被"六视角应有 ≥5 个不同指纹"的判据判红 ——
         #       判据没错，是我把两张图拍成了同一张。
         print('拍 s4-s6 相机记忆…')
-        set_camera(cdp, (cx + R * 0.9, cy - R * 1.5, R * 1.35), (cx, cy, 0))
+        set_camera(cdp, (cx + R * 0.9, cy - R * 1.5, R * 0.6), (cx, cy, 0))
         cdp.eval("(() => { window.__proto.saveCamera(); return 1; })()")
         time.sleep(0.2)
         shots.append(shoot(cdp, 's4-cam-before'))

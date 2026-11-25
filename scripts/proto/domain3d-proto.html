@@ -196,21 +196,28 @@ function makeDomainFixture(opts = {}) {
   const count = opts.stars ?? 30;
   const domainCount = Math.max(1, Math.min(8, opts.domains ?? 4));
   const radius = opts.radius ?? 900;
-  const gap = opts.gap ?? radius * 2.4;
+  const gap = opts.gap ?? radius * 2.15;   // 刚好不压叠（边界 1.08×radius + 6% 扰动 → 2.15 留一点缝）
   const seed = opts.seed ?? 20261125;
   const rnd = mulberry32(seed);
 
   const domains = [];
   for (let d = 0; d < domainCount; d++) {
-    // 域中心：环形排布（与司天现状的"四域分布"同构；≥8 个时自动加环）
+    // 域中心排布：**紧凑网格**，不是大圆环。
+    //
+    // 🔴 2026-11-25 改：原来按"大圆环"排（半径 = gap × (1+ring)），四域时围成一圈、
+    //    中间留一大块空白 —— 截图里四个星域分散在画面四角，中间啥也没有。
+    //    司天现状（`build/sample-galaxy/generated.png`）是**四个星域紧挨着铺开**，
+    //    整体占满画面。这里照现状改成网格：每行最多 2 个（四域 = 2×2），
+    //    间距贴近"刚好不压叠"（gap = 2.15 × radius，round 有 6% 扰动）。
     const pal = FACTION_PALETTE[d % FACTION_PALETTE.length];
-    const ring = Math.floor(d / 8);
-    const nInRing = Math.min(8, domainCount - ring * 8);
-    const idxInRing = d % 8;
-    const ang = (idxInRing / Math.max(1, nInRing)) * Math.PI * 2 + ring * 0.4;
-    const rad = gap * (1 + ring * 0.9);
-    const cx = Math.cos(ang) * rad;
-    const cy = Math.sin(ang) * rad;
+    const perRow = domainCount <= 2 ? domainCount : 2;
+    const row = Math.floor(d / perRow);
+    const col = d % perRow;
+    const rows = Math.ceil(domainCount / perRow);
+    // 行内偏移：让不同行错开半格（避免死板的对齐网格）
+    const stagger = (row % 2) * 0.5;
+    const cx = (col - (perRow - 1) / 2) * gap * 1.0 + stagger * gap * 0.18;
+    const cy = (row - (rows - 1) / 2) * gap * 0.92;
 
     const domId = `d${d + 1}`;
     const stars = [];
@@ -443,7 +450,11 @@ function buildStarfield(count, extent, rnd) {
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
   const mat = new THREE.PointsMaterial({
-    size: extent * 0.0016, sizeAttenuation: true, vertexColors: true,
+    // 🔴 2026-11-25 换正交相机后踩到：`sizeAttenuation: true` 在正交下**不再做远近衰减**，
+    //    `size` 被当成**世界尺寸**直接用 —— extent*0.0016 在 12600 的球壳尺度上是
+    //    20 多个世界单位，屏幕上变成一堆大方块（截图里满天灰方块就是它）。
+    //    正交下必须 `sizeAttenuation: false`（size 变成屏幕像素）+ 一个很小的 px 值。
+    size: 1.6, sizeAttenuation: false, vertexColors: true,
     transparent: true, opacity: 0.9, depthWrite: false, depthTest: false,
   });
   const pts = new THREE.Points(geo, mat);
@@ -546,6 +557,27 @@ let backgroundGroup = null;
 let batchedGroup = null, naiveGroup = null;
 let mode = 'batched';
 let disposed = [];
+// 需要每帧同步正交视锥的光晕材质（见 syncOrthoUniforms）
+const glowMaterials = [];
+
+/**
+ * 把**当前正交视锥**与视口尺寸同步给光晕 shader。
+ *
+ * 为什么必须做：正交相机的"缩放"改的是 `camera.zoom` 与 frustum（不是移动相机），
+ * 而 shader 里算 `gl_PointSize` 需要知道"一个世界单位占几个像素"。
+ * 不同步的话，滚轮缩放后光晕大小不变 —— 看起来像"缩放时星星不掉"。
+ */
+function syncOrthoUniforms() {
+  if (!camera || !glowMaterials.length) return;
+  const halfW = (camera.right - camera.left) / 2 / (camera.zoom || 1);
+  const halfH = (camera.top - camera.bottom) / 2 / (camera.zoom || 1);
+  const vw = (renderer && renderer.domElement && renderer.domElement.width) || 1;
+  const vh = (renderer && renderer.domElement && renderer.domElement.height) || 1;
+  for (const m of glowMaterials) {
+    m.uniforms.uFrustum.value.set(halfW, halfH);
+    m.uniforms.uViewport.value.set(vw, vh);
+  }
+}
 
 function makeStarGeometry() {
   // 低段数：域内总览看不见多边形边界，但段数直接乘实例数
@@ -797,6 +829,9 @@ function buildBatched(sc) {
       uPixelRatio: { value: Math.min(1.5, window.devicePixelRatio || 1) },
       uGlowScale: { value: 4.5 },        // 光晕直径 = 恒星球直径 × 这个数
       uWorldRadius: { value: STAR_RADIUS },
+      // 正交视锥与视口：每帧由 syncOrthoUniforms() 刷新（相机 zoom/frustum 会变）
+      uFrustum: { value: new THREE.Vector2(1, 1) },
+      uViewport: { value: new THREE.Vector2(1, 1) },
     },
     vertexShader: `
       attribute vec3 color;
@@ -805,14 +840,20 @@ function buildBatched(sc) {
       uniform float uPixelRatio;
       uniform float uGlowScale;
       uniform float uWorldRadius;
+      uniform vec2 uFrustum;      // (半宽, 半高) —— 正交投影的视锥，世界单位
+      uniform vec2 uViewport;     // (宽, 高) —— 画布像素
       void main() {
         vColor = color;
         vec4 mv = modelViewMatrix * vec4(position, 1.0);
-        // 世界尺寸 → 屏幕像素（透视：越远越小）
-        float px = uWorldRadius * uGlowScale * 2.0 * uPixelRatio
-                 * (300.0 / max(1.0, -mv.z));
+        // 🔴 2026-11-25 换正交相机后重写（原来是透视公式 300/dist）：
+        //    正交投影里**没有距离衰减**，世界尺寸到屏幕像素是**固定比例**：
+        //      像素每世界单位 = 视口高 / (2 × 视锥半高)
+        //    所以光晕大小 = 世界直径 × 这个比例，与相机多远无关 —— 这正是"远近一样大"。
+        //    继续用透视公式会让光晕随距离缩成一点（远景星域的光晕全消失）。
+        float pxPerWorld = uViewport.y / max(1.0, 2.0 * uFrustum.y);
+        float px = uWorldRadius * uGlowScale * 2.0 * uPixelRatio * pxPerWorld;
         gl_PointSize = clamp(px, 1.5, 220.0);
-        // 远处光晕衰减：太小的时候别硬画成亮点噪
+        // 太小的时候别硬画成亮点噪
         vFade = clamp(px / 6.0, 0.0, 1.0);
         gl_Position = projectionMatrix * mv;
       }
@@ -844,6 +885,8 @@ function buildBatched(sc) {
   glowPoints.frustumCulled = false;   // Points 的包围盒按点算，容易被误剔
   g.add(glowPoints);
   disposed.push(glowGeo, glowMat, glowPoints);
+  // 记下来给主循环同步（正交视锥/视口变化时要刷新 uniform）
+  glowMaterials.push(glowMat);
   // ⚠️ 已知代价：`gl_PointSize` 的上限由 GPU 决定（常见 64~256px）。
   //    贴很近时大恒星的光晕会被截断成方块 —— clamp 到 220 就是为此。
   //    正式实现若要做"贴近看单颗恒星"，光晕应换成 billboard 几何而不是 Points。
@@ -1248,9 +1291,36 @@ async function boot() {
   //    真正需要"远处更淡"的是星域里的恒星，那个由 shader 的 vFade 处理。
   scene.fog = null;
 
-  camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 30000);
-  // 初始机位先给个占位值，真正的取景在拿到 SCENE_DATA 之后用 bbox 算（见下方 fitInitialCamera）。
-  // 为什么不能写死：单域时 900 半径够用，四域时范围会到 4000+，写死必然看不到全部。
+  // ══════════════════════════════════════════════════════════════════════════
+  // 🔴 相机 = **正交投影**（2026-11-25 用户拍板，替换原来的 PerspectiveCamera）
+  //
+  // ## 为什么必须换
+  //
+  // 用户原话："很扁看不清，不如原来平面平铺。现在稍微远一点的东西就看不清。"
+  //
+  // 那不是调参问题，是**透视投影的必然结果**：
+  //   · 透视下，屏幕上大小 ∝ 1/距离 —— 远处的星域天然更小、字天然更糊；
+  //   · 想看清远处只能把相机拉近，拉近又看不全近处 → 永远是"扁 + 糊"。
+  //
+  // 群星的做法（`refs/src/星域视图1.jpg` 可验证）：
+  //   **整张星图用正交投影**，远近一样大、一样清晰；只有飞进单个星系内部才切透视。
+  //
+  // ## 正交投影的代价（要接受）
+  //
+  // · 没有"近大远小"的纵深感 —— 4 个星域一样大。这正是要的效果（都看得清）。
+  // · 纵深靠**遮挡关系**和**明暗**表达，不靠大小。
+  // · 视锥由 left/right/top/bottom 决定，不用 fov；缩放 = 改这几个值（不是拉相机距离）。
+  //
+  // ## 缩放怎么做
+  //
+  // OrbitControls 在正交相机下"缩放"是改 `camera.zoom`（不改位置），
+  // 所以 `controls.minZoom/maxZoom` 才是缩放范围，distance 只管倾角。
+  // 这条很容易踩：照着透视的习惯去调 minDistance/maxDistance，会发现滚轮没反应。
+  // ══════════════════════════════════════════════════════════════════════════
+  const aspect0 = window.innerWidth / Math.max(1, window.innerHeight);
+  const FRUSTUM = 3000;        // 半高（世界单位）；实际值在拿到 bbox 后重设
+  camera = new THREE.OrthographicCamera(
+    -FRUSTUM * aspect0, FRUSTUM * aspect0, FRUSTUM, -FRUSTUM, 0.1, 100000);
   camera.position.set(0, -1500, 1200);
   camera.lookAt(0, 0, 0);
 
@@ -1258,8 +1328,11 @@ async function boot() {
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.enablePan = true;
+  // 正交下：位置只是"从哪看"，真正的缩放是 zoom
+  controls.minZoom = 0.05;
+  controls.maxZoom = 20;
   controls.minDistance = 200;
-  controls.maxDistance = 40000;
+  controls.maxDistance = 60000;
 
   scene.add(new THREE.AmbientLight(0xffffff, 0.55));
   const key = new THREE.DirectionalLight(0xffffff, 0.9);
@@ -1312,6 +1385,10 @@ async function boot() {
         p: [camera.position.x, camera.position.y, camera.position.z],
         t: [controls.target.x, controls.target.y, controls.target.z],
         dist: camera.position.distanceTo(controls.target),
+        // 正交相机：同时回报 zoom 与 frustum，截图器要靠它判断"取景有没有生效"
+        zoom: camera.zoom,
+        frustum: [camera.left, camera.right, camera.top, camera.bottom],
+        ortho: !!camera.isOrthographicCamera,
       };
     },
     // 给截图器一个"自己重绘一帧"的口子（three 的懒更新会让第一帧还是旧相机）
@@ -1336,6 +1413,28 @@ async function boot() {
       renderer.render(scene, camera);
       return { visible: !!v };
     },
+    // 取景（正交）：padding 越小 = 画面里内容越大
+    fit: (padding) => {
+      const bb = SCENE_DATA.bbox;
+      const pad = padding || 1.0;
+      const spanX = Math.max(1, bb.maxX - bb.minX);
+      const spanY = Math.max(1, bb.maxY - bb.minY);
+      const aspect = window.innerWidth / Math.max(1, window.innerHeight);
+      const halfH = Math.max(spanY / 2, spanX / 2 / aspect) * pad;
+      camera.left = -halfH * aspect;
+      camera.right = halfH * aspect;
+      camera.top = halfH;
+      camera.bottom = -halfH;
+      camera.zoom = 1;
+      camera.updateProjectionMatrix();
+      renderer.render(scene, camera);
+      return { zoom: camera.zoom, halfH, ortho: !!camera.isOrthographicCamera };
+    },
+    info2: () => ({
+      ortho: !!camera.isOrthographicCamera,
+      zoom: camera.zoom,
+      frustum: [camera.left, camera.right, camera.top, camera.bottom],
+    }),
   };
   log(`数据：${SCENE_DATA.counts.domains} 星域 / ${SCENE_DATA.counts.stars} 恒星系 / `
     + `${SCENE_DATA.counts.laneSegments} 航道段 / ${SCENE_DATA.counts.borders} 条边界`, 'hi');
@@ -1343,24 +1442,48 @@ async function boot() {
 
   switchMode('batched');
 
-  // 初始取景：按实际 bbox 算，不写死。
-  // 单域 900 半径与四域 4000+ 半径差 4 倍，写死任何一个都会让另一半看不到全貌。
-  {
-    const bb = SCENE_DATA.bbox;
-    const spanX = bb.maxX - bb.minX;
-    const spanY = bb.maxY - bb.minY;
+  // 初始取景：**正交投影下要设 frustum，不是设相机距离**。
+  //
+  // 透视时"取景"= 相机退多远；正交时"取景"= 视锥有多大（camera.left/right/top/bottom）。
+  // 相机距离只决定**从哪个角度看**（倾角），不影响画面缩放。
+  // 这条是换相机后最容易搞错的地方：照旧调 distance 会发现滚轮/取景完全没反应。
+  function fitOrthoToBBox(bb, padding) {
+    const pad = padding || 1.08;
+    const spanX = Math.max(1, bb.maxX - bb.minX);
+    const spanY = Math.max(1, bb.maxY - bb.minY);
+    const aspect = window.innerWidth / Math.max(1, window.innerHeight);
+    // 半高要同时装下纵向跨度，和（按 aspect 折算的）横向跨度
+    const halfH = Math.max(spanY / 2, spanX / 2 / aspect) * pad;
+    const halfW = halfH * aspect;
+    camera.left = -halfW;
+    camera.right = halfW;
+    camera.top = halfH;
+    camera.bottom = -halfH;
+    camera.zoom = 1;
+    camera.updateProjectionMatrix();
+
     const cx = (bb.minX + bb.maxX) / 2;
     const cy = (bb.minY + bb.maxY) / 2;
+    // 倾角：正交下"扁"不再影响清晰度，但仍要留一点纵深让星域有层次。
+    //
+    // 🔴 2026-11-25 用户反馈"很扁"后调整：原来的 0.62（≈32°）把圆形星域压成明显椭圆，
+    //    看起来像"躺着的盘子"。群星星图的倾角很小（看 `refs/src/星域视图1.jpg`：
+    //    四个星域的领土轮廓接近正圆，只是略有透视）。
+    //    0.28 ≈ 16°：有纵深但不失真。
+    //    ⚠️ 这个数只影响"看起来多扁"，不影响远近清晰度（那个正交已经解决了）。
     const dist = Math.max(spanX, spanY) * 1.25;
-    camera.position.set(cx, cy - dist, dist * 0.62);
+    const TILT = 0.28;
+    camera.position.set(cx, cy - dist, dist * TILT);
     controls.target.set(cx, cy, 0);
     controls.update();
     renderer.render(scene, camera);
   }
+  fitOrthoToBBox(SCENE_DATA.bbox);
 
   window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
+    // 正交相机没有 camera.aspect —— 改窗口要重算 frustum，否则图会被拉伸
+    const bb = SCENE_DATA.bbox;
+    fitOrthoToBBox(bb);
     renderer.setSize(window.innerWidth, window.innerHeight, false);
   });
 
@@ -1405,6 +1528,8 @@ async function boot() {
     const dt = now - last;
     last = now;
     controls.update();
+    // 正交相机的 zoom/frustum 可能刚被滚轮改过 → 先同步给光晕 shader 再画
+    syncOrthoUniforms();
     // 夹住 render()：这是合批真正改善的量（见上方 4b 的口径说明）
     const t0 = performance.now();
     renderer.render(scene, camera);
