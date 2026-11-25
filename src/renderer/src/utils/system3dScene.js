@@ -137,12 +137,39 @@ function unit(key) {
   return (hashString(key) % 10000) / 10000;
 }
 
-/** 2D 轨道半径 → 3D 轨道半径（单调递增，第一圈 6，之后每圈 +3.1） */
+/** 2D 轨道半径 → 3D 轨道半径（单调递增，第一圈 8.6，之后每圈 +4.6） */
 export function orbitRadius3d(orbitRadius2d) {
   const r = Number.isFinite(orbitRadius2d) ? orbitRadius2d : SYS3D_GEOM.orbitRef2d;
   const rings = (r - SYS3D_GEOM.orbitRef2d) / SYS3D_GEOM.orbitRef2dStep;
   return SYS3D_GEOM.orbitBase + Math.max(0, rings) * SYS3D_GEOM.orbitStep;
 }
+
+/**
+ * 第 index 颗行星的 3D 轨道半径 —— **每颗行星独占一圈**。
+ *
+ * ## 为什么不能用 2D 的轨道半径
+ *
+ * 2D 的 `planetOrbitLayout`（`composables/systemOrbit.js`）是：
+ *   `orbit = floor(pIdx / 3) + 1` —— **每 3 颗行星共享一条轨道**，靠角度错开。
+ * 这在俯视平面图上是合理的（避免行星图标叠在一起），但**放到 3D 里就是明显错误**：
+ * 真实恒星系不可能有两颗行星在同一轨道上并行。
+ *
+ * 用户 2026-11-25 指出：「示例图中两个星球在同一条轨道，你自己觉得这合理吗」
+ * —— 曜川星系只有 2 颗行星，都落在第 1 圈，截图里就是两个球挤在同一个椭圆上。
+ *
+ * ## 为什么不在 `systemOrbit.js` 里改
+ *
+ * 那个函数被 2D 的 `SystemView` / `SystemDetailView` 共用（7 处引用）。
+ * 2D 需要"同轨道多行星"来避重叠，改了会连 2D 布局一起变 —— 越界。
+ * 所以**只给 3D 一条独立规则**：按排序后的序号，一圈一颗。
+ *
+ * @param {number} index 排序后的行星序号（0 起）
+ */
+export function orbitRadius3dByIndex(index) {
+  const i = Number.isFinite(index) && index >= 0 ? Math.floor(index) : 0;
+  return SYS3D_GEOM.orbitBase + i * SYS3D_GEOM.orbitStep;
+}
+
 
 /**
  * 构建 3D 场景描述。
@@ -177,7 +204,10 @@ export function buildSystem3dScene(input = {}) {
     const sizeScale = Number.isFinite(node.sizeOverride) && node.sizeOverride > 0
       ? node.sizeOverride / SYS3D_GEOM.planetRefRadius2d
       : 0.86 + unit(`size:${key}`) * 0.5;
-    const orbit = orbitRadius3d(node.orbitRadius);
+    // 🔴 2026-11-25：**每颗行星独占一圈**（按序号），不再用 2D 的 orbitRadius。
+    //    2D 那边是"每 3 颗共享一条轨道、靠角度错开"，放到 3D 就是"两颗行星同轨并行"。
+    //    见 orbitRadius3dByIndex 的注释（含为什么不改 2D 那份）。
+    const orbit = orbitRadius3dByIndex(index);
     const moonNodes = moonsByParent.get(node.id) || [];
     return {
       id: key,

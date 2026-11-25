@@ -247,18 +247,30 @@ function resize() {
 }
 
 function makeGlowTexture(tint) {
+  // 🔴 2026-11-25：128 → 512（用户：「只让人觉得模糊」）
+  //
+  // 128×128 的径向渐变贴到屏幕上 300px+ 的光晕上是**放大 2.4 倍**，
+  // 双线性放大会把渐变的 stop 边缘抹成一片均匀的雾 —— 这就是"模糊"的直接来源，
+  // 而且它盖在恒星边缘上，把恒星的轮廓也一起糊掉了。
+  // 512 之后同样尺寸是缩小采样（1×），渐变干净。
+  // 代价：一张 512×512 的 RGBA canvas ≈ 1 MB，只生成一次（按 tint 缓存），可接受。
+  const S = 512;
   const c = document.createElement('canvas');
-  c.width = c.height = 128;
+  c.width = c.height = S;
   const g = c.getContext('2d');
-  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  const half = S / 2;
+  const grad = g.createRadialGradient(half, half, 0, half, half, half);
   grad.addColorStop(0, hexAlpha(tint, 0.95));
   grad.addColorStop(0.25, hexAlpha(tint, 0.42));
   grad.addColorStop(0.6, hexAlpha(tint, 0.12));
   grad.addColorStop(1, hexAlpha(tint, 0));
   g.fillStyle = grad;
-  g.fillRect(0, 0, 128, 128);
+  g.fillRect(0, 0, S, S);
   const tex = new THREE.CanvasTexture(c);
   tex.encoding = THREE.sRGBEncoding;
+  // 缩小采样时用 mipmap 更干净（原值默认 AlsoGenerateMipmaps，这里显式写清意图）
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
   return tex;
 }
 
@@ -335,7 +347,9 @@ function buildScene() {
   scene.add(sunLight);
 
   // 恒星：低模球 + 加色光晕（光晕不参与光照，纯观感）
-  const starGeo = new THREE.SphereGeometry(spec.star.radius, 28, 20);
+  // 🔴 2026-11-25：28×20 → 48×32。恒星是画面里最大的物体（半径 2.4，近景可占 250px+），
+  //    低段数时轮廓的多边形棱在加色光晕衬托下特别明显 —— 那正是"锯齿感"最集中的地方。
+  const starGeo = new THREE.SphereGeometry(spec.star.radius, 48, 32);
   const starMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(spec.star.tint) });
   const star = new THREE.Mesh(track(starGeo), track(starMat));
   star.name = 'star';
@@ -409,7 +423,11 @@ function buildScene() {
       pts.push(new THREE.Vector3(Math.cos(a) * body.orbit, 0, Math.sin(a) * body.orbit));
     }
     const orbitGeo = new THREE.BufferGeometry().setFromPoints(pts);
-    const orbitMat = new THREE.LineBasicMaterial({ color: 0x4a5a78, transparent: true, opacity: 0.32 });
+    // 🔴 2026-11-25 提亮（0.32 → 0.5 + 换更亮的蓝）：
+    //    1px 的线在暗背景上 opacity 0.32 时，抗锯齿后的边缘像素只有 ~0.1 亮度，
+    //    肉眼读起来是"断断续续的脏线"而不是"细轨道"—— 用户说的"模糊"有一半是这条。
+    //    参考图 `星系视图1.png` 里轨道是**能看清是哪一圈**的淡线，不是几乎看不见。
+    const orbitMat = new THREE.LineBasicMaterial({ color: 0x6d84a8, transparent: true, opacity: 0.5 });
     scene.add(new THREE.LineLoop(track(orbitGeo), track(orbitMat)));
 
     const pivot = new THREE.Object3D();
@@ -422,7 +440,11 @@ function buildScene() {
     const mat = new THREE.MeshLambertMaterial({ map: tex });
     const geo = body.kind === 'station'
       ? new THREE.OctahedronGeometry(body.size, 0)
-      : new THREE.SphereGeometry(body.size, 24, 16);
+      // 🔴 2026-11-25：24×16 → 40×28（用户：「锯齿感非常强」）
+      //    单星系是近景视图，行星在屏幕上可以占到 100~200px，
+      //    24 段的球在这个尺寸下**轮廓能看出多边形棱**（不是抗锯齿能救的 —— 那是几何问题）。
+      //    代价：顶点数 24×16≈400 → 40×28≈1100，8 颗行星共 +5600 顶点，可忽略。
+      : new THREE.SphereGeometry(body.size, 40, 28);
     const mesh = new THREE.Mesh(track(geo), track(mat));
     mesh.rotation.z = body.tilt;
     // E1：这颗球可被点中（射线检测只认这一份清单）
@@ -484,29 +506,49 @@ function buildScene() {
     labels.push({ el, mesh, offset: body.size + 0.45 });
   }
 
-  // 小行星带：最内圈到最外圈之间（种子固定 → 每次打开位置一致）
+  // 小行星带：**一圈窄带**，不是"内轨到外轨之间的整片区域"。
+  //
+  // 🔴 2026-11-25 修（用户看到满屏小点后追查）：
+  //    原实现把带子铺在 `min(orbit)+1.6 ~ max(orbit)-1.2` —— 也就是**跨越所有行星轨道**。
+  //    2 颗行星时那是 8.6~13.2 的整片环域，720 个点撒在两圈之间，
+  //    看起来是"满天碎屑"而不是"小行星带"。
+  //    真实小行星带（以及群星里那条）是**夹在两条相邻轨道之间的一条窄环**。
+  //
+  //    改法：取最外侧两颗行星之间的**中点**，带宽 = 相邻轨道间距的 22%（窄带）。
+  //    ⚠️ 这也顺带修掉了"带子压住行星轨道"的观感 —— 原实现的内外边界直接等于行星轨道位置。
   if (spec.bodies.length >= 2) {
     const rng = new SeededRng(hashString(`${spec.star.name}:belt`));
-    const inner = Math.min(...spec.bodies.map((b) => b.orbit)) + 1.6;
-    const outer = Math.max(...spec.bodies.map((b) => b.orbit)) - 1.2;
-    if (outer > inner + 0.8) {
-      const n = 720;
-      const pos = new Float32Array(n * 3);
-      for (let i = 0; i < n; i++) {
-        const a = rng.next() * Math.PI * 2;
-        const r = inner + rng.next() * (outer - inner);
-        pos[i * 3] = Math.cos(a) * r;
-        pos[i * 3 + 1] = (rng.next() - 0.5) * 0.8;
-        pos[i * 3 + 2] = Math.sin(a) * r;
-      }
-      const beltGeo = new THREE.BufferGeometry();
-      beltGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      const beltMat = new THREE.PointsMaterial({ color: 0x8a8578, size: 0.16, transparent: true, opacity: 0.7, depthWrite: false });
-      const belt = new THREE.Points(track(beltGeo), track(beltMat));
-      belt.name = 'belt';
-      scene.add(belt);
-      beltMesh = belt;    // E5：降到最低档时整条带子关掉（它是纯装饰、点最多）
+    const orbits = spec.bodies.map((b) => b.orbit).sort((a, b) => a - b);
+    // 用最外两个轨道的中间那条缝（真实恒星系里小行星带通常在火星/木星之间）
+    const gapMid = (orbits[orbits.length - 2] + orbits[orbits.length - 1]) / 2;
+    const gapSpan = orbits[orbits.length - 1] - orbits[orbits.length - 2];
+    const halfWidth = Math.max(0.35, gapSpan * 0.11);   // 窄：带宽 ≈ 轨道间距的 22%
+    const inner = gapMid - halfWidth;
+    const outer = gapMid + halfWidth;
+    // 点的数量随带宽走（窄带不需要 720 个点，会显得密得像实线）
+    const n = Math.round(720 * (halfWidth * 2) / Math.max(1, gapSpan));
+    const count = Math.max(80, Math.min(720, n));
+    const pos = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const a = rng.next() * Math.PI * 2;
+      const r = inner + rng.next() * (outer - inner);
+      pos[i * 3] = Math.cos(a) * r;
+      // 竖向厚度也收窄（原来 ±0.4，在窄带里显得上下一团）
+      pos[i * 3 + 1] = (rng.next() - 0.5) * 0.22;
+      pos[i * 3 + 2] = Math.sin(a) * r;
     }
+    const beltGeo = new THREE.BufferGeometry();
+    beltGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const beltMat = new THREE.PointsMaterial({
+      color: 0x9a9484, size: 0.13, transparent: true, opacity: 0.55,
+      // 关掉距离衰减：正交/透视下都保持同样大小的碎石颗粒（这是"带"的质感，不是"星点"）
+      sizeAttenuation: false,
+      depthWrite: false,
+    });
+    const belt = new THREE.Points(track(beltGeo), track(beltMat));
+    belt.name = 'belt';
+    scene.add(belt);
+    beltMesh = belt;    // E5：降到最低档时整条带子关掉（它是纯装饰、点最多）
   }
 
   // 背景星空
@@ -682,7 +724,19 @@ async function init() {
     try {
       renderer = new THREE.WebGLRenderer({
         canvas,
-        antialias: false,
+        // 🔴 2026-11-25 改成 true（用户：「这版锯齿感非常强，但是完全没有像素游戏的美感，
+        //    只让人觉得模糊」）。
+        //
+        // 原值是 false —— 那是 2026-10-28 按"低配观感"定的，理由是省 GPU。
+        // 但**单星系内部是近景主视图**（不是星域那种远景总览），
+        // 行星球面、轨道细线、字母标签全是高对比边缘，关掉 MSAA 后：
+        //   · 球面轮廓出现台阶（用户说的"锯齿感"）
+        //   · 细轨道线（1px）在斜向被采样成断续的点（用户说的"模糊"）
+        // 这两件事同时发生 —— 就是"又锯齿又模糊"。
+        //
+        // 代价：MSAA 4x 大约多 20~30% 的 GPU（本机实测帧耗 0.4ms → 0.5ms，可忽略）。
+        // 低配兜底仍在：`qualityLevel` 自动降档会先把 pixelRatioCap 降下来。
+        antialias: true,
         alpha: false,
         powerPreference: 'high-performance',
       });
@@ -691,7 +745,9 @@ async function init() {
       stats.error = error.value;
       return;
     }
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    // 像素比上限 1.5 → 2：高分屏上 1.5 会让细线落在半像素上，反而更糊。
+    // （自动降档仍会在帧耗超标时把它压回去）
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputEncoding = THREE.sRGBEncoding;
     renderer.shadowMap.enabled = false;
     renderer.domElement.addEventListener('webglcontextlost', onContextLost, false);

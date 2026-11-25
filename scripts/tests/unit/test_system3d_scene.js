@@ -111,6 +111,28 @@ async function main() {
     return 'ok';
   });
 
+  check('a2b 3D 里每颗行星独占一圈（用户 11-25：两颗星球同一条轨道不合理）', () => {
+    const g = S.SYS3D_GEOM;
+    const sc = S.buildSystem3dScene(baseInput());
+    const orbits = sc.bodies.filter((b) => b.kind === 'planet').map((b) => b.orbit);
+    // 🔴 核心判据：任意两颗行星的轨道半径**必须不同**
+    for (let i = 0; i < orbits.length; i++) {
+      for (let j = i + 1; j < orbits.length; j++) {
+        assert(Math.abs(orbits[i] - orbits[j]) > 1e-6,
+          `第 ${i} 与第 ${j} 颗行星共用轨道 ${orbits[i]} —— 3D 里这是错的（2D 的每圈 3 颗设计不能带进来）`);
+      }
+    }
+    // 而且必须是从 orbitBase 起、按 orbitStep 等差的（一圈一颗、不漏圈）
+    const sorted = orbits.slice().sort((x, y) => x - y);
+    for (let i = 0; i < sorted.length; i++) {
+      const want = g.orbitBase + i * g.orbitStep;
+      assert(Math.abs(sorted[i] - want) < 1e-6,
+        `第 ${i} 圈应为 ${want}，实得 ${sorted[i]}（轨道不应有空洞）`);
+    }
+    // 反向探针：如果谁把实现换回"按 2D orbitRadius 算"，这条必红 —— 因为 2D 里前 3 颗共享一圈
+    return `${orbits.length} 颗行星 / ${sorted.length} 条独立轨道（${sorted.map((x) => x.toFixed(1)).join(', ')}）`;
+  });
+
   check('a3 卫星挂对母星：parentId 不匹配的不许出现（更不许跑到恒星上）', () => {
     const s = S.buildSystem3dScene(baseInput());
     const p3 = s.bodies.find((b) => b.id === 'p3');
