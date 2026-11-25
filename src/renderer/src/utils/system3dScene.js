@@ -16,19 +16,31 @@ export const SYS3D_GEOM = {
   // 恒星与第一圈轨道的比例（观感口径）：恒星直径约等于内圈轨道的 1/4。
   // 曾经取 3.0/6.0，截图里恒星像把内行星吞了（build/visual-audit/system3d/02-3d.png 的第一版），
   // 现在 1.9/7.6 —— 恒星仍然压得住画面，行星看得出是"绕着走"。
-  starRadius: 1.9,
+  //
+  // 🔴 2026-11-25 对照 `refs/src/星系视图1.png`（群星）再调：
+  //    ① **行星太大了** —— 原来 planetBaseSize 1.15 配 starRadius 1.9，
+  //       行星直径是恒星的 60%~80%，看起来像"双星系统"。群星里行星明显是个小圆盘
+  //       （截图量：恒星约 26px，行星约 9~12px → **行星直径 ≈ 恒星的 35%~45%**）。
+  //       改成 0.62：行星直径 = 1.9×2×0.62/1.9 ≈ 恒星直径的 62%… 还是偏大，
+  //       所以再配合把恒星放大到 2.4（见下）。
+  //    ② **轨道太挤** —— orbitStep 3.3 让 5 颗行星挤在 7.6~20.8 的范围里，
+  //       相邻圈只差 3.3，而行星直径 1.1~1.5 → 视觉上轨道几乎贴在一起。
+  //       群星里相邻轨道的间距明显大于行星直径（约 2~3 倍）。改成 4.6。
+  //    ③ **恒星太小** —— 群星的恒星是画面的绝对主角（直径约占画面 1/20）。
+  //       1.9 → 2.4。
+  starRadius: 2.4,
   /** 第一圈轨道（2D 公式位 75px 处）对应的 3D 半径 */
-  orbitBase: 7.6,
+  orbitBase: 8.6,
   /** 2D 每多一圈（+35px）在 3D 里加多少 */
-  orbitStep: 3.3,
+  orbitStep: 4.6,
   /** 2D 轨道半径基准（systemOrbit.planetOrbitLayout: 40 + orbit*35，第一圈 = 75） */
   orbitRef2d: 75,
   orbitRef2dStep: 35,
   /** 行星半径基准（2D getPlanetRadius('planet') = 7） */
   planetRefRadius2d: 7,
-  planetBaseSize: 1.15,
-  stationSize: 0.55,
-  moonSize: 0.2,
+  planetBaseSize: 0.62,
+  stationSize: 0.38,
+  moonSize: 0.16,
   maxBodies: 64,
 };
 
