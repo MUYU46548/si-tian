@@ -447,7 +447,9 @@ def main():
           return JSON.stringify({ fails: [], id: body.id, name: body.name, rect });
         """), desc='聚焦行星')
         if focus.get('fails'):
+            berr = jget(cdp, "(() => { const e = document.querySelector('[data-testid=\"system-3d-error\"]'); return JSON.stringify({ fails: [], text: e ? e.textContent : null }); })()", desc='3D 错误面板')
             print(f'  ❌ 聚焦失败：{focus["fails"]}')
+            print(f'  面板文字：{berr.get("text")}')
             return 1
         print(f"   聚焦：{focus.get('name')} rect={focus.get('rect')}")
         time.sleep(0.6)

@@ -212,6 +212,7 @@ export function getPlanetTexture(classId, palette) {
   const cached = textureCache.get(key);
   if (cached) return cached;
   const def = paletteForClass(ck, palette);
+  const rng = new SeededRng(hashString(ck));
   const W = 512;
   const H = 256;
   /** 与旧 256×128 版保持**同一套构图**的缩放系数 */
