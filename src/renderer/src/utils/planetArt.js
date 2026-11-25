@@ -331,21 +331,30 @@ export function getCloudTexture(classId) {
   //    再用"一个簇 = 4~9 个低透明度小椭圆"叠出来 —— 边缘被模糊柔化，重叠处自然变厚。
   //    `ctx.filter` 是 Chromium 支持的 2D 能力（一次性生成，不是每帧）。
   g.filter = 'blur(6px)';
-  const clusters = Math.round(10 + def.clouds * 26);
+  // 🔴 第三轮：云要**按纬度成带**（信风带），不是满地随机团。
+  //    原来每个簇的 cy 是均匀随机 → 远看是"撒了一把棉花"。
+  //    改成先从这几条带里挑一条（赤道辐合带 / 两半球信风带 / 中纬风暴带 / 极锋），
+  //    再在带内抖 ±6% 高度、把椭圆**沿经度拉长**（宽 2~4 倍于高）—— 这才是被风吹出来的条带。
+  const BANDS = [0.5, 0.34, 0.66, 0.2, 0.8, 0.08, 0.92];
+  const clusters = Math.round(14 + def.clouds * 40);
   for (let i = 0; i < clusters; i++) {
-    const cx = rng.range(0, W);
-    const cy = rng.range(0, H);
-    // 纬向分布：赤道（ITCZ）与中纬多、极区少 —— 均匀撒会像"随机白斑"
+    const bandY = BANDS[i % BANDS.length] + (rng.next() - 0.5) * 0.12;
+    const cy = Math.max(0, Math.min(1, bandY)) * H;
+    // 极区越来越稀（真实行星两极缺云）
     const lat = Math.abs((cy / H) * 2 - 1);
-    if (rng.next() > (lat < 0.25 ? 1 : lat < 0.7 ? 0.75 : 0.35)) continue;
-    const r = (16 + rng.next() * 44) * (1 - lat * 0.4);
+    if (rng.next() > (lat < 0.25 ? 1 : lat < 0.7 ? 0.8 : 0.45)) continue;
+    const cx = rng.range(0, W);
+    const r = (14 + rng.next() * 30) * (1 - lat * 0.35);
     const puffs = 4 + Math.round(rng.next() * 5);
+    // 沿经度拉长：widthFactor 2~4（云的"丝"，不是"团"）
+    const wf = 2 + rng.next() * 2;
     for (let k = 0; k < puffs; k++) {
       g.fillStyle = `rgba(255,255,255,${0.05 + rng.next() * 0.10})`;
       g.beginPath();
       g.ellipse(
-        cx + rng.range(-r, r), cy + rng.range(-r * 0.55, r * 0.55),
-        r * rng.range(0.3, 0.62), r * rng.range(0.16, 0.34), 0, 0, Math.PI * 2,
+        ((cx + rng.range(-r * wf, r * wf)) % W + W) % W,
+        cy + rng.range(-r * 0.28, r * 0.28),
+        r * rng.range(0.5, 1.1), r * rng.range(0.12, 0.26), 0, 0, Math.PI * 2,
       );
       g.fill();
     }

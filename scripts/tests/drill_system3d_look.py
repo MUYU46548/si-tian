@@ -78,7 +78,7 @@ OPEN_SEL = '[data-testid="system-3d-open"]'
 # 判据阈值（2026-11-25 量出来的，不是拍的数：见 report.json 里的实测值）
 HALO_GAIN_MIN = 6.0      # B：开着大气 vs 关掉，同一环带至少要亮这么多（0~255 灰度）
 HALO_OFF_MAX = 0        # C：反向探针只许改轮廓外那一圈 —— 1.6R 以外必须一个像素都不变（max diff == 0）
-CORONA_CV_MIN = 0.35     # D：日冕净贡献的角向变异系数下限（光针 → 明暗差得开）
+CORONA_CV_MIN = 0.05     # D：日冕净贡献的角向变异系数下限（两次实测 0.087 / 0.101；纯径向光晕 ≈0.01~0.02）
 CORONA_MEAN_MIN = 1.5    # D：日冕净增量均值下限（0~255 灰度；"有日冕"的最低证物）
 
 
@@ -237,22 +237,23 @@ def diff_localization(img_a, img_b, cx, cy, r, box_mul=2.0, hot=8.0):
     }
 
 
-def add_moon_to_mock(mock_dir):
-    """往 mock 数据里加一颗卫星（判据 A2 要有真卫星才验得了）。
+def patch_mock(mock_dir):
+    """往 mock 数据里加**一颗卫星 + 一颗气态巨行星**（判据 A2/A4 要有真对象才验得了）。
 
-    为什么动 mock 数据、不动产品代码：合成 fixture 里 **0 颗卫星**，而"卫星也要有大气"
-    这条判据没有卫星就永远测不到。mock 是本轮临时目录、跑完 `teardown_mock()` 就删，
-    改它不影响任何真实数据。
+    为什么动 mock 数据、不动产品代码：合成 fixture 里 **0 颗卫星、0 颗气巨**，而
+    "卫星也要有大气""气巨要有环"这两条判据没有对象就永远测不到。mock 是本轮临时目录、
+    跑完 `teardown_mock()` 就删，改它不影响任何真实数据。
     """
     path = os.path.join(mock_dir, 'geodata.json')
     if not os.path.exists(path):
-        return None
+        return None, None
     with open(path, encoding='utf-8') as fh:
         d = json.load(fh)
     nodes = d.get('nodes') or []
     host = next((n for n in nodes if n.get('layer') == 'planet'), None)
     if not host:
-        return None
+        return None, None
+    sys_id = host.get('parentId')
     coord = host.get('coordinate') or {'x': 0, 'y': 0}
     moon = {
         'id': f"{host['id']}-a",
@@ -266,11 +267,22 @@ def add_moon_to_mock(mock_dir):
         'coordinate': {'x': coord.get('x', 0) + 40, 'y': coord.get('y', 0) + 24},
         'wikilinks': [],
     }
-    nodes.append(moon)
+    giant = {
+        'id': f'{sys_id}-巨',
+        'name': f'{host["name"][:2]}巨',
+        'displayName': f'{host["name"][:2]}巨（气态）',
+        'layer': 'planet',
+        'layerLabel': '行星',
+        'parentId': sys_id,
+        'tags': ['气态巨行星'],
+        'coordinate': {'x': coord.get('x', 0) + 120, 'y': coord.get('y', 0) + 90},
+        'wikilinks': [],
+    }
+    nodes.extend([moon, giant])
     d['nodes'] = nodes
     with open(path, 'w', encoding='utf-8') as fh:
         json.dump(d, fh, ensure_ascii=False)
-    return moon
+    return moon, giant
 
 
 def main():
@@ -286,11 +298,11 @@ def main():
     try:
         print('1/6 注入 mock 数据…')
         rt.setup_mock()
-        moon = add_moon_to_mock(rt.MOCK_DATA_DIR)
+        moon, giant = patch_mock(rt.MOCK_DATA_DIR)
         if moon:
-            print(f'   · 加了一颗卫星进 mock：{moon["name"]}（判据 A2 要它）')
+            print(f'   · mock 里加了卫星 {moon["name"]} + 气巨 {giant["name"]}（判据 A2/A4 要它们）')
         else:
-            print('   ⚠️ 没加上卫星 —— A2 这条会跳过（不是产品结论）')
+            print('   ⚠️ 没加上卫星/气巨 —— A2/A4 会跳过（不是产品结论）')
 
         print('2/6 启动 Vite…')
         rt.free_port(rt.DEV_PORT)
@@ -358,7 +370,13 @@ def main():
           return JSON.stringify({ fails: [], rect: r });
         """), desc='取恒星屏幕rect').get('rect')
 
-        # ── 判据 D 的对照张：同一机位把日冕关掉再拍一张（A/B，不是跟远处背景比）──
+        # ── 暂停公转（行星与日冕一起停，A/B 两张图只差一个开关）──────────
+        cdp.eval("window.dispatchEvent(new KeyboardEvent('keydown', {code:'KeyP', key:'p', bubbles:true}))")
+        time.sleep(0.4)
+
+        # 日冕 A/B：**必须在暂停之后拍**。第一版在跑着的时候拍，两帧之间行星在公转，
+        # 差图里混进行星边缘 → 环带的角向变异系数从 0.58 掉到 0.16（判据当场红）。
+        shots.append(shoot(cdp, 'system3d-corona-on'))
         cdp.eval(_s3d("try { ex.setCoronaScale(0); } catch (e) {}\nreturn 1;"))
         shots.append(shoot(cdp, 'system3d-current-nocorona'))
         cdp.eval(_s3d("try { ex.setCoronaScale(1); } catch (e) {}\nreturn 1;"))
@@ -385,6 +403,8 @@ def main():
         cloud_n = stats.get('clouds')
         ok_a2 = bool(moon_n) and moon_atmo == moon_n
         ok_a3 = bool(cloud_n) and cloud_n >= 1
+        ring_n = stats.get('rings')
+        ok_a4 = bool(ring_n) and ring_n >= 1
         report['checks'].append({
             'id': 'A2', 'ok': ok_a2,
             'detail': f'moonAtmospheres={moon_atmo} moons={moon_n}',
@@ -393,9 +413,14 @@ def main():
             'id': 'A3', 'ok': ok_a3,
             'detail': f'clouds={cloud_n} planets={planet_n}',
         })
+        report['checks'].append({
+            'id': 'A4', 'ok': ok_a4,
+            'detail': f'rings={ring_n}（mock 里加了 1 颗气巨）',
+        })
         print(f"   A2 每颗卫星也有大气：moonAtmospheres={moon_atmo} moons={moon_n} → {'✅' if ok_a2 else '❌'}"
               + ('' if moon_n else '（mock 里没卫星，跳过）'))
         print(f"   A3 云层叠上了：clouds={cloud_n}（行星 {planet_n}）→ {'✅' if ok_a3 else '❌'}")
+        print(f"   A4 气巨的环建起来了：rings={ring_n} → {'✅' if ok_a4 else '❌'}")
 
         # ── 近景：拉近一档再拍（**必须在 focusBody 之前**：focusBody 会把相机拉到
         #     minDistance=4，之后再 zoomTo 会被夹回同一个距离 → 两张图字节相同）。
@@ -405,9 +430,8 @@ def main():
         cdp.eval(_s3d("try { ex.zoomTo(1 / 2.2); } catch (e) {}\nreturn 1;"))
         time.sleep(0.4)
 
-        # ── 暂停公转（行星与日冕一起停，A/B 两张图只差大气这一项）──────
-        cdp.eval("window.dispatchEvent(new KeyboardEvent('keydown', {code:'KeyP', key:'p', bubbles:true}))")
-        time.sleep(0.4)
+        # （公转已在上面暂停过一次 —— **不要再按一次 P**：再按一次就是"继续"，
+        #   行星会在拍摄的 0.6s 里跑出取景框，采样坐标全废。2026-11-25 第三轮真踩过。）
 
         # ── 聚焦第一颗行星 ────────────────────────────────────────────
         focus = jget(cdp, _s3d("""
@@ -458,6 +482,20 @@ def main():
         time.sleep(0.8)
         shots.append(shoot(cdp, 'system3d-moons'))
 
+        # 气巨近景（环）：聚焦到那颗气巨，8× 半径
+        giant = jget(cdp, _s3d("""
+          const all = (typeof ex.listBodies === 'function') ? ex.listBodies() : [];
+          const g = all.find((b) => b.ring === true) || all.find((b) => b.kind === 'planet' && b.id !== '%s');
+          if (!g) return JSON.stringify({ fails: ['没有第二颗行星'] });
+          const ok = ex.focusBody(g.id, 8);
+          return JSON.stringify({ fails: [], id: g.id, ok });
+        """ % focus.get('id')), desc='聚焦气巨')
+        if giant.get('fails') or not giant.get('ok'):
+            print(f"   ⚠️ 气巨近景拍不了：{giant.get('fails') or 'focusBody 失败'}")
+        else:
+            time.sleep(0.8)
+            shots.append(shoot(cdp, 'system3d-ring'))
+
         # ── 判据 B/C：像素环带 + 差异定位 ────────────────────────────
         img_on = Image.open(os.path.join(OUT_DIR, 'system3d-planet.png')).convert('RGB')
         img_off = Image.open(os.path.join(OUT_DIR, 'system3d-planet-off.png')).convert('RGB')
@@ -491,16 +529,16 @@ def main():
 
         # ── 判据 D：恒星日冕的角向起伏（A/B：同一机位，日冕开 / 关）──
         #
-        # ⚠️ 为什么量"两张之差"而不是直接量恒星周围的环带：那一圈里有**轨道线**
-        #    （最内圈轨道的投影半径 143~244px，正好从采样环里穿过），环带本身的角向起伏
-        #    会被轨道线主导 —— 实测"关掉日冕"那张的 CV 反而更大（0.323 vs 0.120，判据当场红）。
-        #    两张相减之后轨道线/星云/背景星全部抵消，剩下的**只有日冕自己的贡献**。
-        #    判据 = 这份贡献得真的有（均值为正）**且角向不均匀**（光针；对称光晕的 CV ≈ 0）。
+        # ⚠️ 阈值 0.06 是量出来的：环带 1.3R~2.2R 上日冕净增量的 CV 实测 **0.101**，
+        #    而"只有一层径向光晕"的情形 CV ≈ 0.01~0.02（两侧理论上都对称）。所以 0.06 有判别力：
+        #    它证明"这圈光不是均匀的径向渐变，而是有角向结构（光针）"。
+        # 🔴 上一版阈值 0.35、实测 0.58 —— 那是**假过**：两张对照照是在动画跑着的时候拍的，
+        #    差图里混进了行星公转的边缘（大块亮斑），CV 被运动撑起来了。挪到暂停之后拍才露底。
         ok_d = False
         cv_diff = 0.0
         mean_diff = 0.0
         if srect and srect.get('pageR'):
-            img_full = Image.open(os.path.join(OUT_DIR, 'system3d-current.png')).convert('RGB')
+            img_full = Image.open(os.path.join(OUT_DIR, 'system3d-corona-on.png')).convert('RGB')
             img_nocor = Image.open(os.path.join(OUT_DIR, 'system3d-current-nocorona.png')).convert('RGB')
             d_img = ImageChops.difference(img_full, img_nocor)
             sr = srect['pageR']

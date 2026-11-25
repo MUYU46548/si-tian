@@ -487,6 +487,36 @@ async function main() {
     return 'ok';
   });
 
+  check('a16 卫星自转 + 气巨有环（第三轮）', () => {
+    const sc = S.buildSystem3dScene(baseInput());
+    const p3 = sc.bodies.find((b) => b.id === 'p3');
+    for (const m of p3.moons) {
+      assert(Number.isFinite(m.spin) && m.spin > 0, `${m.id} 没有自转（近景会是颗不动的球）`);
+    }
+    // 自转必须确定性
+    const again = S.buildSystem3dScene(baseInput());
+    assert(JSON.stringify(again.bodies.find((b) => b.id === 'p3').moons)
+      === JSON.stringify(p3.moons), '卫星自转不确定（某处用了随机）');
+    // 环：气巨/冰巨才有；同类的行星没有
+    assert(sc.bodies.find((b) => b.id === 'p2').ring === true, '气态巨行星应该有环');
+    assert(sc.bodies.find((b) => b.id === 'p1').ring === false, `${sc.bodies.find((b) => b.id === 'p1').classId} 不该有环`);
+    const icy = S.buildSystem3dScene({
+      starName: 'A', planets: [planet('i1', '某冰巨行星', 75)], moons: [],
+    });
+    assert(icy.bodies[0].ring === true, '冰封巨行星也应该有环');
+    return `${p3.moons.length} 颗卫星有自转 / 气巨有环`;
+  });
+
+  check('b6 源码闸门：环贴图必须是径向同心带（平面 UV 下竖条渐变是错的）', () => {
+    const src = codeOnly(read('src/renderer/src/components/System3DView.vue'));
+    assert(/function makeRingTexture\(\)[\s\S]{0,1500}?g\.arc\(half, half, r0/.test(src),
+      '环贴图不是同心圆画的（RingGeometry 是平面 UV，竖条渐变贴上去是一道横向明暗）');
+    assert(src.includes('ringTilt.rotation.z = body.tilt'),
+      '环没有跟着行星自转轴倾角（倾角大的行星会"环斜穿球"）');
+    assert(src.includes('mp.mesh.rotation.y += mp.spin * dt'), '卫星没有自转接线');
+    return 'ok';
+  });
+
   let failed = 0;
   for (const r of results) {
     if (!r.ok) failed += 1;

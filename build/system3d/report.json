@@ -3,7 +3,7 @@
     {
       "id": "A",
       "ok": true,
-      "detail": "atmospheres=2 planets=2"
+      "detail": "atmospheres=3 planets=3"
     },
     {
       "id": "A2",
@@ -13,62 +13,70 @@
     {
       "id": "A3",
       "ok": true,
-      "detail": "clouds=2 planets=2"
+      "detail": "clouds=2 planets=3"
+    },
+    {
+      "id": "A4",
+      "ok": true,
+      "detail": "rings=1（mock 里加了 1 颗气巨）"
     },
     {
       "id": "B",
       "ok": true,
-      "detail": "halo_on=108.68 halo_off=86.40 gain=22.28 (>= 6.0)"
+      "detail": "halo_on=38.82 halo_off=14.44 gain=24.38 (>= 6.0)"
     },
     {
       "id": "C",
       "ok": true,
-      "detail": "hot=27440 环内占比=1.000 (>= 0.90) 轮廓外最大差=0.0 (<= 0)"
+      "detail": "hot=27554 环内占比=1.000 (>= 0.90) 轮廓外最大差=0.0 (<= 0)"
     },
     {
       "id": "D",
       "ok": true,
-      "detail": "corona mean_diff=12.60 (>= 1.5) cv_diff=0.582 (>= 0.35)"
+      "detail": "corona mean_diff=11.72 (>= 1.5) cv_diff=0.087 (>= 0.05)"
     }
   ],
   "shots": [
     "system3d-current.png",
+    "system3d-corona-on.png",
     "system3d-current-nocorona.png",
     "system3d-close.png",
     "system3d-planet.png",
     "system3d-planet-off.png",
-    "system3d-moons.png"
+    "system3d-moons.png",
+    "system3d-ring.png"
   ],
   "pixels": {
     "r": 140.27,
-    "halo_on": 108.68,
-    "halo_off": 86.4,
-    "gain": 22.28,
-    "hot": 27440,
-    "hot_in_rim": 27440,
+    "halo_on": 38.82,
+    "halo_off": 14.44,
+    "gain": 24.38,
+    "hot": 27554,
+    "hot_in_rim": 27554,
     "rim_fraction": 1.0,
     "max_diff_outside": 0.0
   },
   "corona": {
-    "r": 62.97,
-    "mean_diff": 12.6,
-    "cv_diff": 0.582
+    "r": 49.68,
+    "mean_diff": 11.72,
+    "cv_diff": 0.087
   },
   "stats": {
-    "geometries": 15,
-    "textures": 9,
+    "geometries": 19,
+    "textures": 11,
     "memoryAtDispose": null,
-    "disposed": 47,
-    "frames": 263,
-    "labels": 2,
+    "disposed": 57,
+    "frames": 327,
+    "labels": 3,
     "error": "",
-    "atmospheres": 2,
-    "planets": 2,
+    "atmospheres": 3,
+    "planets": 3,
     "atmoScale": 1,
     "moonAtmospheres": 1,
     "moons": 1,
     "clouds": 2,
     "coronaScale": 1,
+    "rings": 1,
     "quality": {
       "level": "high",
       "pixelRatio": 1,

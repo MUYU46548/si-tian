@@ -243,6 +243,8 @@ export function buildSystem3dScene(input = {}) {
           size: SYS3D_GEOM.moonSize * (0.85 + unit(`msize:${mKey}`) * 0.4),
           phase: unit(`mphase:${mKey}`) * Math.PI * 2,
           speed: 1.1 / (1 + mi * 0.35),
+          // 自转（第三轮）：以前卫星只公转不自转，近景看是颗"不动的球"
+          spin: 0.25 + unit(`mspin:${mKey}`) * 0.3,
         };
       }),
     };

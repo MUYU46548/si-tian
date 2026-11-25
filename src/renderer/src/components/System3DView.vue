@@ -188,6 +188,8 @@ const coronaMats = [];
 const cloudMeshes = [];
 /** 大气强度总系数（排障口可改；0 = 全关） */
 let atmoScale = 1;
+/** 建了几个环（验收读数：气巨/冰巨必须各有一个） */
+let ringCount = 0;
 /** 大气壳层半径 = 行星半径 × 这个倍数（1.22 → 光晕向外延伸约 22% 半径；量过 1.18 只剩 ~1.10R） */
 const ATMO_SHELL = 1.22;
 /**
@@ -522,19 +524,41 @@ function makeNebulaTexture(seed) {
   return tex;
 }
 
+/**
+ * 行星环贴图（2026-11-25 第三轮）：**同心带状**的径向纹理（256×256）。
+ *
+ * 🔴 旧版是一张 2×64 的竖向渐变条带。`RingGeometry` 的 UV 是**平面映射**
+ *    （uv = 顶点位置映射到 0~1²），拿竖条渐变去贴，环面上得到的是一道**横向明暗**，
+ *    不是"一圈圈同心环"——看起来像一块半透明胶带。
+ *    平面映射要的是**径向**纹理：从画布中心往外一圈圈画，贴上去正好对上。
+ *
+ * 带隙：中段留两条低不透明度的窄缝（真实环的卡西尼缝），内缘淡入、外缘渐隐。
+ */
 function makeRingTexture() {
-  // 环：竖向渐变条带（内缘淡 → 中段实 → 外缘淡），贴到 RingGeometry 的径向 UV 上
+  const S = 256;
+  const half = S / 2;
   const c = document.createElement('canvas');
-  c.width = 2;
-  c.height = 64;
+  c.width = c.height = S;
   const g = c.getContext('2d');
-  const grad = g.createLinearGradient(0, 0, 0, 64);
-  grad.addColorStop(0, 'rgba(232, 214, 176, 0)');
-  grad.addColorStop(0.35, 'rgba(232, 214, 176, 0.55)');
-  grad.addColorStop(0.62, 'rgba(210, 186, 140, 0.75)');
-  grad.addColorStop(1, 'rgba(232, 214, 176, 0)');
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 2, 64);
+  const rng = new SeededRng(hashString('system3d:ring'));
+  // RingGeometry 的内/外径是 1.35R / 2.1R（见调用处），平面 UV 下可见环带是 0.643R~1.0R。
+  // 所以条纹画在这个区间里（画布半径 0.64~1.0），否则一半条纹会落在中间的洞里。
+  const rings = 34;
+  for (let i = 0; i < rings; i++) {
+    const t = i / (rings - 1);
+    const r0 = half * (0.64 + t * 0.36);
+    const w = half * 0.014;
+    // 亮度：整体偏亮、中间两条缝（卡西尼缝）
+    let alpha = 0.5 + rng.next() * 0.4;
+    if (t > 0.42 && t < 0.47) alpha *= 0.18;
+    if (t > 0.62 && t < 0.65) alpha *= 0.35;
+    if (t < 0.05 || t > 0.95) alpha *= 0.35;   // 内外缘淡入淡出
+    g.strokeStyle = `rgba(232, 214, 176, ${alpha.toFixed(3)})`;
+    g.lineWidth = w * (1 + rng.next() * 1.2);
+    g.beginPath();
+    g.arc(half, half, r0, 0, Math.PI * 2);
+    g.stroke();
+  }
   const tex = new THREE.CanvasTexture(c);
   tex.encoding = THREE.sRGBEncoding;
   return tex;
@@ -726,18 +750,25 @@ function buildScene() {
     pickables.push({ mesh, mat, body, atmoMat });
 
     if (body.ring) {
-      const ringGeo = new THREE.RingGeometry(body.size * 1.35, body.size * 2.1, 64);
+      const ringGeo = new THREE.RingGeometry(body.size * 1.35, body.size * 2.1, 96);
       const ringMat = new THREE.MeshBasicMaterial({
         map: track(makeRingTexture()),
         color: 0xd8c290,
         side: THREE.DoubleSide,
         transparent: true,
-        opacity: 0.72,
+        opacity: 0.85,
         depthWrite: false,
       });
       const ring = new THREE.Mesh(track(ringGeo), track(ringMat));
-      ring.rotation.x = Math.PI / 2.25;
-      holder.add(ring);
+      // 🔴 环要躺在**这颗行星的赤道面**里：旧版写死 `rotation.x = PI/2.25`，
+      //    与 `body.tilt`（自转轴倾角）无关 —— 倾角大的行星会出现"环斜着穿过球"。
+      //    做法：外层转 tilt（与 mesh.rotation.z 同一个轴），内层再摆平。
+      const ringTilt = new THREE.Object3D();
+      ringTilt.rotation.z = body.tilt;
+      ring.rotation.x = Math.PI / 2;
+      ringTilt.add(ring);
+      holder.add(ringTilt);
+      ringCount += 1;
     }
 
     const moonPivots = [];
@@ -778,7 +809,7 @@ function buildScene() {
       const mOrbitGeo = new THREE.BufferGeometry().setFromPoints(mPts);
       const mOrbitMat = new THREE.LineBasicMaterial({ color: 0x8b949e, transparent: true, opacity: 0.18 });
       holder.add(new THREE.LineLoop(track(mOrbitGeo), track(mOrbitMat)));
-      moonPivots.push({ pivot: mp, speed: moon.speed });
+      moonPivots.push({ pivot: mp, speed: moon.speed, mesh: mMesh, spin: moon.spin || 0.3 });
     }
 
     orbits.push({ pivot, mesh, speed: body.speed, moonPivots, clouds: cloudMesh });
@@ -911,6 +942,7 @@ function buildScene() {
   stats.planets = spec.bodies.filter((b) => b.kind === 'planet').length;
   stats.moons = spec.bodies.reduce((n, b) => n + b.moons.length, 0);
   stats.clouds = cloudMeshes.length;
+  stats.rings = ringCount;
   // E5：初始就在最高档（不预设降档 —— 用户机器够快就不该看到任何变化）
   stats.quality = { level: qualityLevel, pixelRatio: renderer ? renderer.getPixelRatio() : null, avgFrameMs: 0 };
 }
@@ -930,7 +962,10 @@ function animate() {
       o.pivot.rotation.y += o.speed * dt;
       o.mesh.rotation.y += 0.25 * dt;
       if (o.clouds) o.clouds.rotation.y += 0.33 * dt;   // 云比地表转得快一点
-      for (const mp of o.moonPivots) mp.pivot.rotation.y += mp.speed * dt;
+      for (const mp of o.moonPivots) {
+        mp.pivot.rotation.y += mp.speed * dt;
+        mp.mesh.rotation.y += mp.spin * dt;   // 第三轮：卫星也自转（以前近景是颗不动的球）
+      }
     }
     for (const s of starPivots) s.pivot.rotation.y += s.speed * dt;
     // 日冕慢转：静止的放射光针看着像贴纸，转起来才是"被风吹的光"（0.02 rad/s ≈ 5 分钟一圈）
@@ -1012,6 +1047,7 @@ function disposeAll() {
   moonAtmoMats.length = 0;
   coronaMats.length = 0;
   cloudMeshes.length = 0;
+  ringCount = 0;
   atmoScale = 1;
   beltMesh = null;
   qualityLevel = 'high';
@@ -1220,7 +1256,7 @@ function starScreenRect() {
 
 /** 验收口：列出天体（id/name/kind）—— 截图脚本要挑一颗行星聚焦，不该去猜 spec 的结构 */
 function listBodies() {
-  return pickables.map((p) => ({ id: p.body.id, name: p.body.name, kind: p.body.kind }));
+  return pickables.map((p) => ({ id: p.body.id, name: p.body.name, kind: p.body.kind, ring: !!p.body.ring }));
 }
 
 /**
