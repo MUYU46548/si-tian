@@ -154,6 +154,9 @@ OPEN_HARNESS_JS = r"""(async () => {
   draft.entities = payload.entities || {};
   draft.hyperlanes = payload.hyperlanes || [];
   draft.maps = payload.maps || {};
+  // 2026-11-25 第六轮：项目级自定义行星类别也随载荷走（知识库态为空表，行为不变；
+  // 但若将来知识库态出现了类别，harness 不能把它们丢掉 —— 那会让用例看到另一份世界）
+  if (payload.planetClasses) draft.planetClasses = payload.planetClasses;
   if (payload.scenarios) draft.scenarios = payload.scenarios;
   window.__projects = window.__projects || {};
   window.__projectCalls = window.__projectCalls || [];

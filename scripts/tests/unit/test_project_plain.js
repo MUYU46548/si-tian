@@ -39,7 +39,7 @@ function eq(actual, expected, label) {
 
 /** 把 ESM 源文件复制到临时目录并按需补 `.js` 后缀，再 import（同 test_project_size.js） */
 async function importSchema() {
-  const deps = ['projectSchema.js', 'normalizeId.js'];
+  const deps = ['projectSchema.js', 'normalizeId.js', 'planetClasses.js', 'planetPalettes.js'];
   const dir = path.join(TMP, 'schema');
   await fsp.mkdir(dir, { recursive: true });
   await fsp.writeFile(path.join(dir, 'package.json'), JSON.stringify({ type: 'module' }), 'utf-8');
@@ -135,7 +135,7 @@ async function main() {
     const dir = path.join(TMP, 'broken');
     await fsp.mkdir(dir, { recursive: true });
     await fsp.writeFile(path.join(dir, 'package.json'), JSON.stringify({ type: 'module' }), 'utf-8');
-    for (const f of ['projectSchema.js', 'normalizeId.js']) {
+    for (const f of ['projectSchema.js', 'normalizeId.js', 'planetClasses.js', 'planetPalettes.js']) {
       let body = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'src', 'utils', f), 'utf8')
         .replace(/from '\.\/([A-Za-z0-9_-]+)'/g, "from './$1.js'");
       if (f === 'projectSchema.js') {

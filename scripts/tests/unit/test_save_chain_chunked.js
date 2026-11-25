@@ -34,7 +34,7 @@ const results = [];
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
 
 async function importSchema(sub = 'schema') {
-  const deps = ['projectSchema.js', 'normalizeId.js'];
+  const deps = ['projectSchema.js', 'normalizeId.js', 'planetClasses.js', 'planetPalettes.js'];
   const dir = path.join(TMP, sub);
   await fsp.mkdir(dir, { recursive: true });
   await fsp.writeFile(path.join(dir, 'package.json'), JSON.stringify({ type: 'module' }), 'utf-8');

@@ -55,7 +55,9 @@ SCHEMA_JS = """(async () => {
 
   // ---- 空项目形状 ----
   const p0 = S.createEmptyProject({ name: '测试项目' });
-  same('空项目顶层键', Object.keys(p0).sort(), ['entities','hyperlanes','maps','meta','scenarios','snapshots','version'].sort());
+  // 2026-11-25 第六轮：新增项目级自定义行星类别表（随项目文件共享，见 utils/planetClasses.js）
+  same('空项目顶层键', Object.keys(p0).sort(), ['entities','hyperlanes','maps','meta','planetClasses','scenarios','snapshots','version'].sort());
+  ck('planetClasses 是空表', Array.isArray(p0.planetClasses) && p0.planetClasses.length === 0, p0.planetClasses);
   ck('version', p0.version === S.PROJECT_VERSION, p0.version);
   ck('meta 齐备', !!p0.meta.id && p0.meta.name === '测试项目' && !!p0.meta.created);
   ck('scenarios 容器为 v2 结构', p0.scenarios.version === 2 && typeof p0.scenarios.baseMaps === 'object' && typeof p0.scenarios.scenarios === 'object');

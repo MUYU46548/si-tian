@@ -23,22 +23,22 @@
     {
       "id": "B",
       "ok": true,
-      "detail": "halo_on=38.93 halo_off=14.58 gain=24.35 (>= 6.0)"
+      "detail": "halo_on=39.03 halo_off=14.72 gain=24.31 (>= 6.0)"
     },
     {
       "id": "C",
       "ok": true,
-      "detail": "hot=27623 环内占比=1.000 (>= 0.90) 轮廓外最大差=0.0 (<= 0)"
+      "detail": "hot=27605 环内占比=1.000 (>= 0.90) 轮廓外最大差=0.0 (<= 3)"
     },
     {
       "id": "E",
       "ok": true,
-      "detail": "card_ok=True recolor_px=63749 (>=200) before=#3a7a6a"
+      "detail": "card_ok=True recolor_px=63766 (>=200) before=#3a7a6a"
     },
     {
       "id": "D",
       "ok": true,
-      "detail": "corona mean_diff=11.72 (>= 1.5) cv_diff=0.086 (>= 0.05)"
+      "detail": "corona mean_diff=11.72 (>= 1.5) cv_diff=0.085 (>= 0.05)"
     }
   ],
   "shots": [
@@ -54,25 +54,25 @@
   ],
   "pixels": {
     "r": 140.27,
-    "halo_on": 38.93,
-    "halo_off": 14.58,
-    "gain": 24.35,
-    "hot": 27623,
-    "hot_in_rim": 27623,
+    "halo_on": 39.03,
+    "halo_off": 14.72,
+    "gain": 24.31,
+    "hot": 27605,
+    "hot_in_rim": 27605,
     "rim_fraction": 1.0,
     "max_diff_outside": 0.0
   },
   "corona": {
     "r": 49.68,
     "mean_diff": 11.72,
-    "cv_diff": 0.086
+    "cv_diff": 0.085
   },
   "stats": {
     "geometries": 20,
     "textures": 11,
     "memoryAtDispose": null,
     "disposed": 59,
-    "frames": 318,
+    "frames": 330,
     "labels": 3,
     "error": "",
     "atmospheres": 3,

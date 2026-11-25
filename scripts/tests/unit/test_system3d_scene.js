@@ -67,7 +67,10 @@ function planet(id, name, px, extra) {
 
 async function main() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sitian-system3d-'));
-  for (const f of ['planetArt.js', 'system3dScene.js']) {
+  // ⚠️ 2026-11-25 第六轮起 planetArt.js 依赖 planetClasses.js（自定义类别注册表），
+  //    而 planetClasses 又依赖 planetPalettes 的配色净化 —— 复制清单少一个，
+  //    整个文件会以 "Cannot find module" 挂掉，看起来像“3D 用例全红”。
+  for (const f of ['planetPalettes.js', 'planetClasses.js', 'planetArt.js', 'system3dScene.js']) {
     fs.copyFileSync(path.join(UTILS, f), path.join(tmp, f));
   }
   fs.writeFileSync(path.join(tmp, 'package.json'), JSON.stringify({ type: 'module' }));

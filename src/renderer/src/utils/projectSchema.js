@@ -13,6 +13,7 @@
 //     meta:      { id, name, created, updated },          // 项目元信息
 //     entities:  { [entityId]: Entity },                  // 实体树（与 GeoNode 同形，见下）
 //     hyperlanes:[ { id, fromId, toId, type } ],          // 星系间航道
+//     planetClasses: [ { id, label, kind, base, … } ],    // 项目级自定义行星类别（2026-11-25，随项目共享）
 //     scenarios: { version: 2, baseMaps, scenarios, groups?, slicePoints? },  // 历史剧本（groups = 剧本集，2026-10-25）
 //     maps:      { [planetId]: { …mapData } },            // 每行星地图数据（Phase 2 从 .sitian/mapdata.json 迁入）
 //     snapshots: [ { at, label, base?, patch, changes } ] // 自动备份环形缓冲（最近 50 份）
@@ -57,6 +58,10 @@
 //   不会出现“绑定了就突然不能回滚地形”这种状态相关的意外。
 
 import { normalizeId } from './normalizeId';
+// 自定义行星类别（2026-11-25 第六轮）：项目文件里的 `planetClasses: []` 与实体同级。
+// 规范化放在 utils/planetClasses.js（纯函数）—— 渲染层与这里共用同一份判定，
+// 不在 schema 里另写一套“宽松版校验”（那样文件里读得进、渲染时会静默回落，最难看）。
+import { normalizePlanetClassList } from './planetClasses.js';
 
 export const PROJECT_VERSION = '1.0.0';
 export const PROJECT_EXT = '.sitian';
@@ -208,7 +213,7 @@ export function toIpcJson(value) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 分块序列化（2026-11-05，卡「撤销连按被保存链拖住：主线程占满 1~3 秒」）
+// 分块序列化（2026-11-05，卡“撤销连按被保存链拖住：主线程占满 1~3 秒”）
 //
 // 病灶（真机 + CPU 样本）：8.2MB 项目一次落盘 = `exportCanvas` + `snapshotState` +
 //   `pushSnapshot`（重放 + diff + 逐份数体积）+ `toIpcJson`（88ms 一整段）。连按 Ctrl+Z
@@ -404,6 +409,9 @@ export function createEmptyProject({ name = '未命名项目', id = '', now = ''
     meta: { id: id || randomId(), name: String(name || '未命名项目'), created: ts, updated: ts },
     entities: {},
     hyperlanes: [],
+    // 项目级自定义行星类别（2026-11-25 第六轮）：随项目文件走，与用户自己的配色库
+    // （localStorage）是两件事 —— 这条是**世界事实**，换台机器打开同一个项目也要在。
+    planetClasses: [],
     scenarios: { version: 2, baseMaps: {}, scenarios: {}, groups: [] },
     maps: {},
     snapshots: [],
@@ -682,6 +690,18 @@ export function validateProject(raw) {
     problems.push('hyperlanes 不是数组，已重置为空');
   }
 
+  // ---- planetClasses（项目级自定义类别；2026-11-25 第六轮）----
+  // 旧项目没有这个字段 → 空表（不报问题：缺字段是正常的历史形态，不是损坏）。
+  // 有但坏掉 → 丢弃坏条目并**记一条问题**（不让它静默消失）。
+  let planetClasses = [];
+  if (Array.isArray(raw.planetClasses)) {
+    planetClasses = normalizePlanetClassList(raw.planetClasses);
+    const dropped = raw.planetClasses.length - planetClasses.length;
+    if (dropped > 0) problems.push(`自定义行星类别有 ${dropped} 条不合法或重复，已丢弃`);
+  } else if (raw.planetClasses !== undefined) {
+    problems.push('planetClasses 不是数组，已重置为空');
+  }
+
   // ---- scenarios（沿用既有 version 2 结构；这里只保证容器形状，内容由 scenarioEditing 负责）----
   let scenarios;
   if (isPlainObject(raw.scenarios) && isPlainObject(raw.scenarios.baseMaps) && isPlainObject(raw.scenarios.scenarios)) {
@@ -726,7 +746,7 @@ export function validateProject(raw) {
 
   return {
     ok: true,
-    project: { version: PROJECT_VERSION, meta, entities, hyperlanes, scenarios, maps, snapshots },
+    project: { version: PROJECT_VERSION, meta, entities, hyperlanes, planetClasses, scenarios, maps, snapshots },
     problems,
   };
 }
@@ -1149,7 +1169,7 @@ export function snapshotBytes(snapshots) {
  * 旧写法每次 push 都 `snapshots.map(sizeOf)` —— 最多 50 份、合计 6MB 上限，
  * 真机样本里这一项自成一个 **45ms** 的忙段（每存一次盘就数一遍全部快照）。
  * 快照条目是不可变的（push 只 push / shift / 换第 0 份的引用，从不改内容），
- * 所以「一份量一次」就够：`WeakMap` 以条目对象为键，丢掉的份自然被回收。
+ * 所以“一份量一次”就够：`WeakMap` 以条目对象为键，丢掉的份自然被回收。
  */
 const snapshotSizeCache = new WeakMap();
 function snapshotSizeOf(snapshot) {

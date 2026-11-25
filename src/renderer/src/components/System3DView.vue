@@ -20,7 +20,12 @@
       <label class="sys3d-card-row" title="行星类型：落数据（node.planetClass），下次打开 3D / 2D 图标都按它">
         <span>类型</span>
         <select data-testid="sys3d-class" :value="picked.classId" @change="onClassChange">
-          <option v-for="c in planetClasses" :key="c.id" :value="c.id">{{ c.label }}</option>
+          <optgroup label="内置类型">
+            <option v-for="c in stockClasses" :key="c.id" :value="c.id">{{ c.label }}</option>
+          </optgroup>
+          <optgroup v-if="customClasses.length" label="本项目自定义">
+            <option v-for="c in customClasses" :key="c.id" :value="c.id">{{ c.label }}</option>
+          </optgroup>
         </select>
       </label>
       <label class="sys3d-card-row" title="逐颗改色：只影响这一颗，写进项目文件的 planetColors（2D 圆盘同步变）">
@@ -41,8 +46,28 @@
       </label>
       <label class="sys3d-card-row">
         <input class="sys3d-preset-name" data-testid="sys3d-preset-name" v-model="presetName"
-               placeholder="配色名（可空）" />
+               placeholder="名字（配色 / 类别共用）" />
         <button class="sys3d-preset-save" data-testid="sys3d-preset-save" @click="onSavePreset">存为配色</button>
+      </label>
+      <!-- 2026-11-25 第六轮：配色库 → **自定义类别**。与“存为配色”的区别是存在哪儿：
+           配色在本机（localStorage，跨项目）；类别写进项目文件（.sitian，随项目共享、换机器也在）。 -->
+      <label class="sys3d-card-row"
+             :title="canSaveClass
+               ? '把当前这颗的观感存成项目类别：写进 .sitian，出现在上面的类型下拉里，换台机器打开同一个项目也在'
+               : '要存类别，先打开（或新建）一个项目文件 —— 类别是项目数据，不写在未保存的临时画布里'">
+        <button class="sys3d-preset-save sys3d-class-save" data-testid="sys3d-class-save"
+                :disabled="!canSaveClass" @click="onSaveClass">存为类别（随项目）</button>
+      </label>
+      <label v-if="customClasses.length" class="sys3d-card-row"
+             title="删除一个本项目自定义类别；还有天体在用它时会被拒绝（那些天体是用户一颗颗调过的，不替人重置）">
+        <span>类别库</span>
+        <select data-testid="sys3d-class-manage" :value="manageClassId"
+                @change="manageClassId = $event.target.value">
+          <option value="">选一个…</option>
+          <option v-for="c in customClasses" :key="c.id" :value="c.id">{{ c.label }}</option>
+        </select>
+        <button class="sys3d-preset-save" data-testid="sys3d-class-delete"
+                :disabled="!manageClassId" @click="onDeleteClass">删除</button>
       </label>
       <button class="sys3d-card-go" data-testid="sys3d-drill" @click="onDrill">
         进入行星地图 <Icon name="chevron-right" :size="12" />
@@ -93,11 +118,15 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import Icon from './Icon.vue';
 import {
-  PLANET_CLASSES, SeededRng, atmosphereForClass, getCloudTexture, getPlanetTexture,
+  PLANET_CLASSES, SeededRng, atmosphereForClass, customClassFromPalette, getCloudTexture, getPlanetTexture,
   hashString, hexAlpha, paletteForClass, planetClassLabel,
 } from '../utils/planetArt.js';
 import { SYS3D_QUALITY, nextQualityLevel } from '../utils/system3dScene.js';
 import { loadPresets, savePreset } from '../utils/planetPalettes.js';
+// 自定义类别是**项目数据**（写进 .sitian）—— 卡片的“存为类别 / 删除”直接走 store 的写口，
+// 不经父组件转手：那两条写要立刻拿到“成功/被拒”的回执（还有天体的类别不许删），
+// 走 emit 只能发出去、拿不回原因，最后会变成“点了没反应”。
+import { useGeodataStore } from '../store/geodata';
 
 const props = defineProps({
   // buildSystem3dScene() 的产物；父组件每次打开时现算
@@ -117,7 +146,8 @@ const countsText = computed(() => {
 });
 
 // ===== E1/E2（2026-10-29）：3D 里点中行星 → 改类型 / 下钻 =====
-const planetClasses = PLANET_CLASSES;
+const geodata = useGeodataStore();
+const stockClasses = PLANET_CLASSES;
 const picked = ref(null);       // { id, name, classId, kind }（选中那颗）
 /** 可点对象：mesh 用于射线检测，mat 用于换贴图（改类型当场生效，不必重开 3D） */
 const pickables = [];
@@ -125,6 +155,16 @@ let raycaster = null;
 let downAt = null;              // pointerdown 位置：用来区分“点选”与“拖拽旋转”
 
 const classLabel = (id) => planetClassLabel(id);
+
+/**
+ * 项目级自定义类别（2026-11-25 第六轮）：
+ * · 类型下拉里与内置类别分组显示；
+ * · “存为类别”把当前这颗的观感写进项目文件（.sitian）；
+ * · 只读态（没打开项目）不给存 —— 类别是项目数据，不是本机设置。
+ */
+const customClasses = computed(() => geodata.planetClasses || []);
+const manageClassId = ref('');
+const canSaveClass = computed(() => geodata.canvasSource === 'project' && !!picked.value);
 
 function onPointerDown(e) {
   downAt = { x: e.clientX, y: e.clientY, t: Date.now() };
@@ -232,6 +272,50 @@ function onSavePreset() {
   return r;
 }
 
+/**
+ * “存为类别”（2026-11-25 第六轮）：把**当前这颗的完整观感**写成项目级类别。
+ *
+ * 与“存为配色”的区别是存在哪儿：配色进本机库（跨项目），类别进项目文件（随项目共享）。
+ * 存的是完整类别定义而不是“颜色补丁”—— 内置类别将来改观感时，用户的世界不跟着变。
+ */
+function onSaveClass() {
+  const p = picked.value;
+  if (!p) return null;
+  const eff = paletteForClass(p.classId, p.palette);
+  const def = customClassFromPalette({
+    name: presetName.value || p.name,
+    classId: p.classId,
+    palette: { base: eff.base, cap: eff.cap, atmosphere: eff.atmosphere, land: eff.land },
+  });
+  if (!def) {
+    status.value = "这个类别存不了（配色不完整）";
+    return null;
+  }
+  const r = geodata.addPlanetClass(def);
+  if (!r.ok) {
+    status.value = r.reason || "类别没存进去";
+    return r;
+  }
+  presetName.value = "";
+  manageClassId.value = "";
+  status.value = `已存为类别“${r.def.label}”（写进项目文件；在类型下拉里选它）`;
+  return r;
+}
+
+/** “删除”类别：store 会拒绝“还有天体在用”的删除，回执原样显示 —— 不替用户重置那些天体 */
+function onDeleteClass() {
+  const id = manageClassId.value;
+  if (!id) return null;
+  const r = geodata.removePlanetClass(id);
+  if (!r.ok) {
+    status.value = r.reason || "类别没删掉";
+    return r;
+  }
+  manageClassId.value = "";
+  status.value = "已删除该类别（撤销可恢复）";
+  return r;
+}
+
 /** 改类型：**当场换贴图/大气** + 落数据（planetClass 走父组件的 store 写口） */
 function onClassChange(e) {
   const id = picked.value && picked.value.id;
@@ -239,7 +323,9 @@ function onClassChange(e) {
   if (!id || !classId) return;
   const hit = pickables.find((p) => p.body.id === id);
   if (hit && THREE) {
-    const tex = new THREE.CanvasTexture(getPlanetTexture(classId));
+    // 🔴 必须把这一颗的逐颗色板一起传下去：不传的话“改类型”会把这颗行星自己调过的颜色
+    //    在 3D 里丢掉（2D 圆盘仍按 planetColors 画 → 两个视图不一致）。A 方案的同一个取色口。
+    const tex = new THREE.CanvasTexture(getPlanetTexture(classId, hit.body.palette));
     tex.encoding = THREE.sRGBEncoding;
     track(tex);
     hit.mat.map = tex;
@@ -282,7 +368,7 @@ const starPivots = [];
 /**
  * 大气壳层的材质清单（2026-11-25）。
  * 一是给排障口 `setAtmosphereScale` 用（验收要做"关掉必红"的反向探针），
- * 二是给 `stats.atmospheres` 计数 —— 判据「每颗行星都得有大气」要读得到数。
+ * 二是给 `stats.atmospheres` 计数 —— 判据“每颗行星都得有大气”要读得到数。
  */
 const atmoMats = [];
 /** 其中属于卫星的那些（判据要分开数：行星数 / 卫星数各有一条） */
@@ -397,7 +483,7 @@ function resize() {
 }
 
 function makeGlowTexture(tint) {
-  // 🔴 2026-11-25：128 → 512（用户：「只让人觉得模糊」）
+  // 🔴 2026-11-25：128 → 512（用户：“只让人觉得模糊”）
   //
   // 128×128 的径向渐变贴到屏幕上 300px+ 的光晕上是**放大 2.4 倍**，
   // 双线性放大会把渐变的 stop 边缘抹成一片均匀的雾 —— 这就是"模糊"的直接来源，
@@ -472,7 +558,7 @@ function makeStarMaterial(tint) {
 }
 
 /**
- * 行星大气边缘光（2026-11-25，用户：「很多行星根本没有大气」）。
+ * 行星大气边缘光（2026-11-25，用户：“很多行星根本没有大气”）。
  *
  * 做法：比行星**大一圈的背面球壳** + 加色混合，但衰减**不是**按"菲涅耳"算的。
  *
@@ -546,7 +632,7 @@ function makeAtmosphereMaterial(tint, strength, planetR, shellR) {
 }
 
 /**
- * 日冕 / 耀斑贴图（2026-11-25，用户：「恒星没有日冕/耀斑 —— 现在是个亮球」）。
+ * 日冕 / 耀斑贴图（2026-11-25，用户：“恒星没有日冕/耀斑 —— 现在是个亮球”）。
  *
  * 参考图里的恒星不只是"亮球"：外面有一圈**长短不一的放射光针**，而且整团是缓慢流动的。
  * 一张 512 的贴图（26 根细锥 + 内层柔光）贴在加色 sprite 上、每帧慢转 —— 静态截图也看得出"毛边"，
@@ -594,7 +680,7 @@ function makeCoronaTexture(tint) {
 }
 
 /**
- * 星云贴图（2026-11-25，用户：「背景空」）：一团软边、内部不均匀的色块。
+ * 星云贴图（2026-11-25，用户：“背景空”）：一团软边、内部不均匀的色块。
  *
  * 抄的是星域 3D 原型（`scripts/proto/domain3d-proto.html`）那套 —— 那边已经为"深空感"
  * 调过一轮（3000 颗星场 + 4 团星云 + 1 个亮核）。单星系视图不需要亮核（恒星自己就是亮的），
@@ -860,7 +946,7 @@ function buildScene() {
     const mat = new THREE.MeshLambertMaterial({ map: tex });
     const geo = body.kind === 'station'
       ? new THREE.OctahedronGeometry(body.size, 0)
-      // 🔴 2026-11-25：24×16 → 40×28（用户：「锯齿感非常强」）
+      // 🔴 2026-11-25：24×16 → 40×28（用户：“锯齿感非常强”）
       //    单星系是近景视图，行星在屏幕上可以占到 100~200px，
       //    24 段的球在这个尺寸下**轮廓能看出多边形棱**（不是抗锯齿能救的 —— 那是几何问题）。
       //    代价：顶点数 24×16≈400 → 40×28≈1100，8 颗行星共 +5600 顶点，可忽略。
@@ -874,7 +960,7 @@ function buildScene() {
     pivot.add(holder);
     holder.add(mesh);
 
-    // 大气边缘光（2026-11-25，用户：「很多行星根本没有大气」）。
+    // 大气边缘光（2026-11-25，用户：“很多行星根本没有大气”）。
     // 挂在 holder 上（不吃 mesh 的自转/倾角）：大气层不该跟着地表一起转。
     // `body.atmo` 由 buildSystem3dScene 给 —— 每颗行星都有，空间站没有。
     let atmoMat = null;
@@ -1038,7 +1124,7 @@ function buildScene() {
   }
 
   // ── 背景（2026-11-25）：星云 → 星场，两层 ─────────────────────────────
-  // 用户：「背景空」。参考图里的深空不是纯黑，是"几团极淡的冷色 + 一层颗粒感的星"。
+  // 用户：“背景空”。参考图里的深空不是纯黑，是"几团极淡的冷色 + 一层颗粒感的星"。
   // 星云先画（renderOrder 更低），星场压在上面；两者都不写深度、不吃光照、不进命中。
   //
   // ⚠️ 星云 sprite 放在 1200 距离的球壳上（相机的 far 是 4000、星场是 900~1600）：
@@ -1102,7 +1188,7 @@ function buildScene() {
   stats.geometries = renderer.info.memory.geometries;
   stats.textures = renderer.info.memory.textures;
   stats.labels = labels.length;
-  // 验收判据（2026-11-25）：「每颗行星都要有大气」= 壳层数必须等于行星数。
+  // 验收判据（2026-11-25）：“每颗行星都要有大气”= 壳层数必须等于行星数。
   // 以前 3D 里一颗都没有 —— 用户说的"很多行星根本没有大气"就是这个。
   // 卫星的大气单独计数（薄一档，判据 A2 用），别混进行星那一栏。
   stats.moonAtmospheres = moonAtmoMats.length;
@@ -1277,8 +1363,8 @@ async function init() {
     try {
       renderer = new THREE.WebGLRenderer({
         canvas,
-        // 🔴 2026-11-25 改成 true（用户：「这版锯齿感非常强，但是完全没有像素游戏的美感，
-        //    只让人觉得模糊」）。
+        // 🔴 2026-11-25 改成 true（用户：“这版锯齿感非常强，但是完全没有像素游戏的美感，
+        //    只让人觉得模糊”）。
         //
         // 原值是 false —— 那是 2026-10-28 按"低配观感"定的，理由是省 GPU。
         // 但**单星系内部是近景主视图**（不是星域那种远景总览），
@@ -1601,6 +1687,9 @@ defineExpose({
   padding: 3px 8px; font-size: 12px; cursor: pointer; white-space: nowrap;
 }
 .sys3d-preset-save:hover { background: rgba(51, 65, 85, 0.95); }
+.sys3d-preset-save:disabled { opacity: 0.42; cursor: not-allowed; }
+/* “存为类别”独占一行：它和“存为配色”是两个去处（项目 vs 本机），别挤在同一行的按钮组里 */
+.sys3d-class-save { flex: 1; }
 .sys3d-card-go {
   display: inline-flex; align-items: center; justify-content: center; gap: 4px;
   border: 1px solid rgba(56, 189, 248, 0.55);

@@ -81,7 +81,7 @@ export const useProjectStore = defineStore('project', () => {
   /**
    * 最近一次删除（2026-11-24）：`{ filePath, label, entryId, trashDir, at }` 或 null。
    * 为什么要有它：删完要给一条**就在手边的"撤回"**。用户原话
-   * 「还原没做，因为司天内根本没还原按钮。你难道指望用户去回收站自己找（可能有几千个文件）？」
+   * “还原没做，因为司天内根本没还原按钮。你难道指望用户去回收站自己找（可能有几千个文件）？”
    */
   const lastDeleted = ref(null);
 
@@ -513,7 +513,8 @@ export const useProjectStore = defineStore('project', () => {
 
   /** 把画布载荷并进项目对象（纯函数式合并：返回新对象，保持响应式替换语义） */
   function mergeCanvasPayload(project, payload = {}) {
-    if (!payload || (!payload.entities && !payload.hyperlanes && !payload.maps && !payload.scenarios)) return project;
+    if (!payload || (!payload.entities && !payload.hyperlanes && !payload.maps && !payload.scenarios
+      && !payload.planetClasses)) return project;
     // 🔴 2026-10-24（1-b）：**先 toRaw 再展开**。
     //    `{ ...project.value }` 走的是 Vue 代理的 get 陷阱 → 取回来的每个值又是**代理**，
     //    于是这份合并结果里种满了代理：落盘时 `toIpcPlain` 逐属性读一遍 3.6MB = 237ms，
@@ -528,6 +529,8 @@ export const useProjectStore = defineStore('project', () => {
     //    `preserveEntityTimestamps` 只在内容真的变了时才接受新时间戳。
     if (payload.entities) next.entities = preserveEntityTimestamps(raw.entities, payload.entities);
     if (payload.hyperlanes) next.hyperlanes = payload.hyperlanes;
+    // 项目级自定义行星类别（2026-11-25 第六轮）：整表替换（定义表很小，且写口一律换引用）
+    if (payload.planetClasses) next.planetClasses = payload.planetClasses;
     if (payload.maps) next.maps = { ...(toRaw(raw.maps) || {}), ...payload.maps };   // mapData + editor 逐键合并
     if (payload.scenarios) next.scenarios = payload.scenarios;
     return next;
@@ -688,7 +691,7 @@ export const useProjectStore = defineStore('project', () => {
    * 会变成“保存不了”），然后走同一条 `openProject`。
    *
    * 🔴 为什么放在 store 里而不是面板里各写一遍：
-   *   ① `test_48` 的静态约定是「面板不许直接调 sitianAPI，一律经 projectStore」——
+   *   ① `test_48` 的静态约定是“面板不许直接调 sitianAPI，一律经 projectStore”——
    *      两个入口（世界选择页 / 项目面板）各自调 IPC 就是 2 份实现，当场被判红（2026-11-05 真踩）；
    *   ② 同一能力只许一份实现（本仓红线）—— 复制+打开的顺序与报错口径只该写一次。
    */
@@ -725,7 +728,7 @@ export const useProjectStore = defineStore('project', () => {
     } catch (e) { /* 非浏览器环境（Node 单测）忽略 */ }
   }
 
-  // ── 保存流水线（2026-11-05，卡「撤销连按被保存链拖住」）──────────────────────
+  // ── 保存流水线（2026-11-05，卡“撤销连按被保存链拖住”）──────────────────────
   // `saveChain`：同一时刻只允许一条保存流水线在跑（连按撤销时以前会叠成两三份同时在跑）。
   let saveChain = Promise.resolve();
   /** 单调时钟（性能口径一律用它，不用 Date.now —— 后者会被系统校时扰动） */
@@ -753,7 +756,7 @@ export const useProjectStore = defineStore('project', () => {
 
   /** 保存项目（先追加一份快照，再落盘；主进程另存整文件备份） */
   async function saveProject({ label = '', keep } = {}) {
-    // 🔴 2026-11-05（卡「撤销连按被保存链拖住」）：**串行化**，同一时刻只允许一条保存流水线。
+    // 🔴 2026-11-05（卡“撤销连按被保存链拖住”）：**串行化**，同一时刻只允许一条保存流水线。
     //    以前没有这道闸：连按 Ctrl+Z 时（剧本层 300ms + 项目层 800ms 两层防抖交错）
     //    会出现两份保存同时在跑 —— 一份在 `await IPC`、另一份已经开始快照/序列化，
     //    主线程上的同步段就首尾相接。真机 3 秒窗口里一帧都没有，就是这么来的。
@@ -1014,7 +1017,7 @@ export const useProjectStore = defineStore('project', () => {
 
   /**
    * **撤回最近一次删除**（2026-11-24 用户拍板）：
-   * 「还原没做，因为司天内根本没还原按钮。你难道指望用户去回收站自己找（可能有几千个文件）？」
+   * “还原没做，因为司天内根本没还原按钮。你难道指望用户去回收站自己找（可能有几千个文件）？”
    *
    * 删除已经改成进**应用自有回收站**（`<项目目录>/.sitian-trash/<时间戳>/`），
    * 所以撤回也在应用里点 —— 不需要离开软件、不需要在系统回收站里翻。

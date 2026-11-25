@@ -10,7 +10,16 @@
  * 新增类别 = 加一条 def，不改渲染器。
  *
  * 18 类：宜居九型 + 死星系 + 气巨/冰巨 + 人造两型。
+ *
+ * 🔴 2026-11-25 第六轮：类别表不再只有这 18 条**代码常量** —— 项目文件可以带自定义类别
+ *    （`utils/planetClasses.js`）。注册表在下面：`registerPlanetClasses()`，由 geodata 在
+ *    打开项目 / 增删类别时调用。**取类别定义一律走 `planetClassDef()`，不要再直接查
+ *    `PLANET_CLASSES`** —— 那样自定义类别会静默退化成大陆星球。
  */
+
+import {
+  createPlanetClass, normalizePlanetClassList,
+} from './planetClasses.js';
 
 /** FNV-1a：与判据无关的稳定散列（只用它给"看名字看不出来"的类别挑默认款）。 */
 export function hashString(s) {
@@ -80,8 +89,43 @@ export const PLANET_CLASSES = [
 
 const CLASS_IDS = new Set(PLANET_CLASSES.map((c) => c.id));
 
+// ===== 自定义类别注册表（2026-11-25 第六轮）=====
+//
+// 为什么是**模块级**状态而不是每个调用点都传一份：`getPlanetTexture` / `planetClassLabel` /
+// `system3dScene.planetClassForNode` … 有十几处调用，全部改成“带一个类别表参数”会漏（漏一处
+// 就静默回落大陆星球）。注册表只有一个写入点（geodata 的项目装载/增删），读侧零改动。
+//
+// ⚠️ 项目关闭时必须 `registerPlanetClasses([])`（见 geodata.releaseProjectFromCanvas）：
+//    否则上一个项目的自定义类别会继续被认成合法 classId，2D/3D 画出不该存在的类型。
+let customClasses = [];
+let customById = new Map();
+
+/**
+ * 用项目里的自定义类别**整体替换**注册表。传空数组 = 清空。
+ * 坏条目由 `normalizePlanetClassList` 丢掉（渲染层不做二次校验）。
+ * @param {Array<object>} list
+ * @returns {Array<object>} 实际生效的类别（已规范化）
+ */
+export function registerPlanetClasses(list) {
+  customClasses = normalizePlanetClassList(list);
+  customById = new Map(customClasses.map((c) => [c.id, c]));
+  return customClasses.slice();
+}
+
+/** 当前注册的自定义类别（只读副本） */
+export function listCustomPlanetClasses() {
+  return customClasses.slice();
+}
+
+/** 内置 + 自定义的合并表（下拉框按它分组；顺序 = 内置在前、自定义按项目里的顺序） */
+export function allPlanetClasses() {
+  return [...PLANET_CLASSES, ...customClasses];
+}
+
 export function planetClassDef(classId) {
-  return PLANET_CLASSES.find((c) => c.id === classId) ?? PLANET_CLASSES[0];
+  // 自定义优先：它们不可能撞内置 id（id 形态由 planetClasses.js 的 ID_RE 守着），
+  // 但先查自定义能让“同一份 classId 在运行时被项目定义过”这件事说了算。
+  return customById.get(classId) ?? PLANET_CLASSES.find((c) => c.id === classId) ?? PLANET_CLASSES[0];
 }
 
 export function planetClassLabel(classId) {
@@ -89,7 +133,7 @@ export function planetClassLabel(classId) {
 }
 
 export function isPlanetClassId(classId) {
-  return CLASS_IDS.has(classId);
+  return customById.has(classId) || CLASS_IDS.has(classId);
 }
 
 /** 有环的类别（3D 里给气巨/冰巨加一圈薄环） */
@@ -100,7 +144,7 @@ export function hasRing(classId) {
 /**
  * 大气边缘光的**强度档**（2026-11-25）。
  *
- * 用户原话：「顺便很多行星根本没有大气」——指的是 3D 里每颗行星都是**硬边球**：
+ * 用户原话：“顺便很多行星根本没有大气”——指的是 3D 里每颗行星都是**硬边球**：
  * 一颗球贴一张贴图，轮廓就是球面的边界，没有任何"裹着一层气"的过渡。
  * 群星参考图里每颗行星都有一圈柔光（浓淡不同），那是行星最容易读成"球"的线索。
  *
@@ -133,7 +177,10 @@ export function atmosphereForClass(classId, palette) {
   const raw = typeof def.atmosphere === 'string' && def.atmosphere[0] === '#'
     ? def.atmosphere
     : def.base;
-  const strength = ATMO_STRENGTH[def.id] ?? 0.6;
+  // 自定义类别自带 `atmo`（存成类别时从祖类别抄下来的浓淡，见 planetClasses.js）；
+  // 内置类别没有这个字段，仍查 ATMO_STRENGTH 那张表。
+  const declared = Number.isFinite(def.atmo) ? def.atmo : ATMO_STRENGTH[def.id];
+  const strength = Number.isFinite(declared) ? declared : 0.6;
   return {
     color: raw,
     // 夹一下：ATMO_STRENGTH 里写错一个小数点也不许让光晕变成一坨白
@@ -194,6 +241,39 @@ export function paletteKey(overrides) {
 }
 
 /**
+ * 自定义类别的**定义指纹**（纹理/云/圆盘缓存键必须带它）。
+ *
+ * 内置类别是代码常量，指纹恒为 `s`（旧缓存照旧命中）；自定义类别同 id 也可能改定义
+ * （删了重建、或手改项目文件）—— 只按 id 缓存会出现“新类别贴着旧纹理”。
+ */
+function classDefTag(classId) {
+  const custom = customById.get(classId);
+  if (!custom) return 's';
+  return hashString(JSON.stringify(custom)).toString(16);
+}
+
+/**
+ * 由一颗行星的**当前观感**造一个自定义类别（UI“存为类别”的唯一入口）。
+ *
+ * 为什么不直接存“配色补丁”：类别是**世界事实**，必须自带全部字段、不跟内置类别漂移；
+ * 而 `seed` 记住祖类别的 id，所以选回这颗时陆块构图不变、只换颜色（不是一张陌生贴图）。
+ *
+ * @param {{ name?: string, classId?: string, palette?: object }} input
+ * @returns {object|null} 规范化后的类别定义；配色不完整时返回 null
+ */
+export function customClassFromPalette({ name = '', classId, palette } = {}) {
+  const baseDef = planetClassDef(classId);
+  const eff = paletteForClass(baseDef.id, palette);
+  return createPlanetClass({
+    name,
+    baseDef,
+    palette: eff,
+    // 浓淡跟着祖类别走（荒芜 → 盖亚不能忽然裹一圈厚光）
+    atmo: atmosphereForClass(baseDef.id).strength,
+  });
+}
+
+/**
  * 平面纹理（等距圆柱风格）：3D 观景的球面贴图。
  *
  * 🔴 2026-11-25 第二轮：256×128 → **512×256**。用户说的"近景看得出色块边界"就是它：
@@ -207,12 +287,15 @@ export function paletteKey(overrides) {
  * @returns {HTMLCanvasElement}
  */
 export function getPlanetTexture(classId, palette) {
-  const ck = CLASS_IDS.has(classId) ? classId : PLANET_CLASSES[0].id;
-  const key = `${ck}:${paletteKey(palette)}`;
+  const ck = isPlanetClassId(classId) ? classId : PLANET_CLASSES[0].id;
+  // 🔴 缓存键 = 类别 + 逐颗色板 + **类别定义指纹**。少了最后一个，同 id 改定义（删了重建）
+  //    会继续贴旧纹理；少了色板那一项，同类别的另一颗会跟着变 —— 两条都是静默的。
+  const key = `${ck}:${paletteKey(palette)}:${classDefTag(ck)}`;
   const cached = textureCache.get(key);
   if (cached) return cached;
   const def = paletteForClass(ck, palette);
-  const rng = new SeededRng(hashString(ck));
+  // 自定义类别用祖类别的 seed：颜色换了，陆块构图还是原来那些（见 planetClasses.js）
+  const rng = new SeededRng(hashString(def.seed || ck));
   const W = 512;
   const H = 256;
   /** 与旧 256×128 版保持**同一套构图**的缩放系数 */
@@ -354,14 +437,16 @@ export function hasClouds(classId) {
  * @returns {HTMLCanvasElement|null}
  */
 export function getCloudTexture(classId) {
-  const cid = CLASS_IDS.has(classId) ? classId : PLANET_CLASSES[0].id;
+  const cid = isPlanetClassId(classId) ? classId : PLANET_CLASSES[0].id;
   const def = planetClassDef(cid);
   if (!def.clouds) return null;
-  const hit = cloudCache.get(cid);
+  // 云量与 seed 都随类别定义走 → 键里必须带定义指纹（同 id 改定义不许贴旧云）
+  const key = `${cid}:${classDefTag(cid)}`;
+  const hit = cloudCache.get(key);
   if (hit) return hit;
   const W = 512;
   const H = 256;
-  const rng = new SeededRng(hashString(`cloud:${cid}`));
+  const rng = new SeededRng(hashString(`cloud:${def.seed || cid}`));
   const c = document.createElement('canvas');
   c.width = W;
   c.height = H;
@@ -424,9 +509,9 @@ const discCache = new Map();
  * @returns {HTMLCanvasElement}
  */
 export function getPlanetDisc(classId, px = 48, palette) {
-  const cid = CLASS_IDS.has(classId) ? classId : PLANET_CLASSES[0].id;
+  const cid = isPlanetClassId(classId) ? classId : PLANET_CLASSES[0].id;
   const bucket = px <= 48 ? 48 : px <= 96 ? 96 : 128;
-  const key = `${cid}:${bucket}:${paletteKey(palette)}`;
+  const key = `${cid}:${bucket}:${paletteKey(palette)}:${classDefTag(cid)}`;
   const hitP = discCache.get(key);
   if (hitP) return hitP;
 

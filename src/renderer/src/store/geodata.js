@@ -26,6 +26,13 @@ import { setCanvasAdapter, getProjectSink, setGotoHandler } from './canvasBridge
 import { registerFlush } from './quitFlush';
 // 纯函数：实体的规范化构造（保证写进项目文件的实体形状统一；不引入任何 IO）
 import { createEntity as createProjectEntity } from '../utils/projectSchema';
+// 项目级自定义行星类别（2026-11-25 第六轮）：规范化 + 注册表。注册表在 planetArt，
+// 这里只在“装载项目 / 增删类别”两个时刻写它 —— 渲染层读侧一行不改。
+import {
+  MAX_CUSTOM_PLANET_CLASSES, nextPlanetClassId, normalizePlanetClass,
+  normalizePlanetClassList, uniquePlanetClassLabel,
+} from '../utils/planetClasses.js';
+import { registerPlanetClasses } from '../utils/planetArt.js';
 // 剧本集：落盘前收养“剧本引用了、组表里却没有”的组 id —— 否则这条剧本在所有组里都不可见
 import { adoptOrphanGroups } from '../utils/scenarioGroups';
 // 地点类型枚举单源（A-3）：搜索筛选 / 详情面板 / 项目面板共用一份，组件里不许再抄 `['自然', …]`
@@ -83,6 +90,13 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   // ===== 地图数据 =====
   const mapData = ref({});
+
+  // ===== 项目级自定义行星类别（2026-11-25 第六轮）=====
+  // 与节点上的 `planetClass` / `planetColors` 的关系：
+  //   · 本数组是“类别的**定义**”（label/kind/颜色/观感标志），随项目文件走；
+  //   · 节点上的 `planetClass = 'cp-xxx'` 是“这颗行星**选了**哪个类别”；
+  //   · 注册表（planetArt）拿到本数组的副本供渲染层查询 —— 唯一写入点是下面的 applyPlanetClasses。
+  const planetClasses = ref([]);
 
   // ===== 计算属性 =====
   const canUndo = undoCanUndo;
@@ -1046,6 +1060,86 @@ export const useGeodataStore = defineStore('geodata', () => {
     return node;
   }
 
+  // ===== 项目级自定义行星类别（2026-11-25 第六轮）=====
+  // 三个口径（都写进实现里了，别在 UI 侧另判一套）：
+  //   ① **唯一写入点**：applyPlanetClasses 是唯一改 planetClasses 的地方，它顺手写注册表；
+  //   ② **一条编辑 = 一条 undo**：增/删都走 execute，撤销时注册表跟着回退（2D/3D 立刻换回旧观感）；
+  //   ③ **只读态拒绝**：无项目 = 只读（READONLY_WITHOUT_PROJECT），返回可读原因而不是静默失败。
+  function applyPlanetClasses(list) {
+    const clean = normalizePlanetClassList(list);
+    planetClasses.value = clean;
+    registerPlanetClasses(clean);
+    return clean;
+  }
+
+  /** 把“新数组”写成一条可撤销编辑（唯一执行路径） */
+  function commitPlanetClasses(after, label) {
+    const before = planetClasses.value;
+    execute({
+      type: 'planet-classes',
+      label,
+      category: 'property',
+      undo: () => { planetClasses.value = before; registerPlanetClasses(before); },
+      redo: () => { planetClasses.value = after; registerPlanetClasses(after); },
+    });
+    scheduleAutoSave();
+  }
+
+  /**
+   * 新增一个自定义类别。
+   *
+   * @param {object} raw 类别定义（通常来自 `planetArt.customClassFromPalette`）
+   * @returns {{ ok: boolean, reason?: string, def?: object, classes?: Array }}
+   */
+  function addPlanetClass(raw) {
+    if (!guardWrite('新增行星类别').ok) {
+      return { ok: false, reason: '只读：还没有打开项目文件，类别不能保存（类别随项目走）' };
+    }
+    const list = normalizePlanetClassList(planetClasses.value);
+    if (list.length >= MAX_CUSTOM_PLANET_CLASSES) {
+      return { ok: false, reason: `自定义类别最多 ${MAX_CUSTOM_PLANET_CLASSES} 个（先删掉不用的）` };
+    }
+    const clean = normalizePlanetClass(raw);
+    if (!clean) return { ok: false, reason: '这个类别的内容不合法（配色不完整）' };
+
+    // id 不能撞库里的现有项（createPlanetClass 用时间戳+随机生成，理论上会撞）
+    const usedIds = new Set(list.map((c) => c.id));
+    let id = clean.id;
+    let guard = 0;
+    while (usedIds.has(id) && guard < 50) { id = nextPlanetClassId(); guard += 1; }
+    if (usedIds.has(id)) return { ok: false, reason: '类别 id 生成失败（请重试）' };
+
+    const def = { ...clean, id, label: uniquePlanetClassLabel(clean.label, list) };
+    const after = [...list, def];
+    commitPlanetClasses(after, '新增行星类别');
+    return { ok: true, def, classes: after };
+  }
+
+  /**
+   * 删一个自定义类别。
+   *
+   * 还有天体在用它就**拒绝**（而不是“顺手把那些行星改成别的类型”）：逐颗改色是用户
+   * 一颗一颗调的，机器没有资格替他重置。回执里写清还有几个、该怎么办。
+   */
+  function removePlanetClass(id) {
+    if (!guardWrite('删除行星类别').ok) {
+      return { ok: false, reason: '只读：还没有打开项目文件，类别不能删除' };
+    }
+    const list = normalizePlanetClassList(planetClasses.value);
+    const def = list.find((c) => c.id === id);
+    if (!def) return { ok: false, reason: '没有这个自定义类别' };
+    const used = nodes.value.filter((n) => n.planetClass === id);
+    if (used.length) {
+      return {
+        ok: false,
+        reason: `还有 ${used.length} 个天体在用“${def.label}”，先把它们改成别的类型再删`,
+      };
+    }
+    const after = list.filter((c) => c.id !== id);
+    commitPlanetClasses(after, '删除行星类别');
+    return { ok: true, classes: after };
+  }
+
   // ===== 节点层级迁移（含循环检测） =====
   // 安全地将节点迁移到新的父节点下
   // 返回 { success: boolean, reason?: string }
@@ -1811,6 +1905,7 @@ export const useGeodataStore = defineStore('geodata', () => {
       nodes: nodes.value,
       hyperlanes: hyperlanes.value,
       mapData: mapData.value,
+      planetClasses: planetClasses.value,
       editor: readEditorContainers(),
       scenarios: scenarioEditingModule ? {
         baseMaps: scenarioEditingModule.baseMaps.value,
@@ -1870,6 +1965,9 @@ export const useGeodataStore = defineStore('geodata', () => {
     return {
       entities,
       hyperlanes: rawShallowRows(state.hyperlanes),
+      // 项目级自定义行星类别（2026-11-25 第六轮）：小对象数组，跟实体/航道同一条路。
+      // 知识库态没有这份东西（只读、也没有“项目”），`rawShallowRows(undefined)` 自然得空表。
+      planetClasses: rawShallowRows(state.planetClasses),
       // maps 不进快照（体积），另有整文件备份兜底；editor 放这里也一样（快照回滚不覆盖编辑器容器，
       // 这条限制写在 projectSchema 的头部注释里）
       maps: {
@@ -1920,6 +2018,8 @@ export const useGeodataStore = defineStore('geodata', () => {
       nodes: nodes.value,
       hyperlanes: hyperlanes.value,
       mapData: mapData.value,
+      // 知识库态没有项目级类别（只读、也没地方存）—— 显式给空表，载荷形状与项目态一致
+      planetClasses: [],
       editor: readEditorContainers(),
       scenarios: scenarioEditingModule ? {
         baseMaps: scenarioEditingModule.baseMaps.value,
@@ -1993,6 +2093,9 @@ export const useGeodataStore = defineStore('geodata', () => {
       ? JSON.parse(JSON.stringify(project.maps.mapData, jsonSafeReplacer)) : {};
     // 区域/建筑/太空等编辑器容器（项目文件里存于 maps.editor；老项目没有 → 一律清空）
     writeEditorContainers((project.maps && project.maps.editor) || {});
+    // 自定义行星类别：**先装定义、再让视图画**（applyPlanetClasses 顺手写渲染层注册表）。
+    // 老项目没有这个字段 → normalize 出空表，registry 清空（不会残留上一个项目的类别）。
+    applyPlanetClasses(project.planetClasses);
     if (scenarioEditingModule) {
       const sc = project.scenarios || {};
       // 🔴 一律走 `applyScenarioState`（**唯一的日期迁移入口**）：它会跑 `normalizeScenarioDates`
@@ -2073,6 +2176,9 @@ export const useGeodataStore = defineStore('geodata', () => {
   function releaseProjectFromCanvas() {
     const snap = vaultSnapshot;
     canvasSourceRef.value = 'vault';
+    // 🔴 先清类别注册表：知识库态没有项目级类别，留着会让 `isPlanetClassId` 继续认
+    //    上一个项目的 `cp-*`，2D/3D 画出本不该存在的“类型”。（项目文件里那份不受影响。）
+    applyPlanetClasses([]);
     if (!snap) return { ok: true, restored: false };
     nodes.value = snap.nodes;
     hyperlanes.value = snap.hyperlanes;
@@ -2211,6 +2317,8 @@ export const useGeodataStore = defineStore('geodata', () => {
 
   return {
     nodes, hyperlanes, tree, currentWorld, currentDomain, currentSystem, currentPlanet, currentArea, viewLevel,
+    // 项目级自定义行星类别（2026-11-25 第六轮）：定义表 + 增删写口
+    planetClasses, addPlanetClass, removePlanetClass,
     selectedNode, searchQuery, searchResults, searchMatchIndex, currentMatchNode, isWikilinkMatch,
     worlds, starDomains, galaxies, planets, locations,
     currentWorldDomains, currentDomainGalaxies, currentSystemPlanets, currentPlanetPlaces, currentAreaPlaces, currentDomainAllGalaxies,

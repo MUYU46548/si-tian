@@ -9,7 +9,7 @@
  * 自转轴倾角）一律由 `hashString(node.id || node.name)` 推导 —— 同一项目每次打开长得一模一样。
  */
 
-import { PLANET_CLASSES, atmosphereForClass, hashString, isPlanetClassId } from './planetArt.js';
+import { PLANET_CLASSES, atmosphereForClass, hashString, hasRing, isPlanetClassId } from './planetArt.js';
 
 // ===== 尺寸口径（与 SP-1025 一致的低模观感；单位是场景单位，不是像素） =====
 export const SYS3D_GEOM = {
@@ -156,7 +156,7 @@ export function orbitRadius3d(orbitRadius2d) {
  * 这在俯视平面图上是合理的（避免行星图标叠在一起），但**放到 3D 里就是明显错误**：
  * 真实恒星系不可能有两颗行星在同一轨道上并行。
  *
- * 用户 2026-11-25 指出：「示例图中两个星球在同一条轨道，你自己觉得这合理吗」
+ * 用户 2026-11-25 指出：“示例图中两个星球在同一条轨道，你自己觉得这合理吗”
  * —— 曜川星系只有 2 颗行星，都落在第 1 圈，截图里就是两个球挤在同一个椭圆上。
  *
  * ## 为什么不在 `systemOrbit.js` 里改
@@ -230,7 +230,9 @@ export function buildSystem3dScene(input = {}) {
       // 自转与自转轴倾角：让球看起来不是死贴图
       spin: 0.18 + unit(`spin:${key}`) * 0.25,
       tilt: (unit(`tilt:${key}`) - 0.5) * 0.5,
-      ring: classId === 'gasGiant' || classId === 'iceGiant',
+      // 🔴 2026-11-25 第六轮：环的判定走 `hasRing`（类别的 kind === 'bands'），
+      //    不再写死两个内置 id —— 否则“自定义气巨”会没有环（它明明是同一种天体）。
+      ring: hasRing(classId),
       moons: moonNodes.map((m, mi) => {
         const mKey = m.id || `${key}-moon-${mi}`;
         const mClassId = planetClassForNode(m, { fallbackLayer: 'moon' });

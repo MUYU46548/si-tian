@@ -68,7 +68,7 @@ async function resolveTmpRoot() {
 }
 
 async function importSchema() {
-  const deps = ['projectSchema.js', 'normalizeId.js'];
+  const deps = ['projectSchema.js', 'normalizeId.js', 'planetClasses.js', 'planetPalettes.js'];
   const dir = path.join(TMP, 'schema');
   await fsp.mkdir(dir, { recursive: true });
   await fsp.writeFile(path.join(dir, 'package.json'), JSON.stringify({ type: 'module' }), 'utf-8');

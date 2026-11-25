@@ -18,6 +18,10 @@
      点“进入行星地图”→ 3D 关闭且 `viewLevel === 'planet'` 且 `currentPlanet` 就是那颗。
      （射线点选本身用真实鼠标坐标不好稳定复现：相机在动、行星在公转 —— 这里只喂"选中态"，
       验证点中之后那两条链。）
+  G. **自定义类别（2026-11-25 第六轮）**：卡片“存为类别”→ 类别进项目载荷 + 类型下拉出现
+     → 选中后 `node.planetClass` 落库、球面贴图真的换成那套颜色（读贴图像素，不是看截图）
+     → 存盘/重开项目后类别与选择都还在（走 mock 的 projectSave/projectOpen 真载荷）
+     → 还有天体在用时删除被拒（回执写明原因），改成别的类型后可删、撤销能恢复。
 
 为什么用 store 直接进 system_detail：背包路径（点恒星亮点）已由 test_10 守；
 本用例只关心 3D，少一次画布命中就少一处会误红的依赖。
@@ -299,5 +303,239 @@ def run(cdp):
     if not pick.get('rootGone'):
         return False, f"F 段下钻后 3D 没关：{pick}"
     detail += ' | F: 改类型落数据 + 下钻进行星地图'
+
+    # ---------- G. 自定义类别（2026-11-25 第六轮）----------
+    # F 段结束停在行星视图（3D 已关）。回恒星系 → 再开 3D，用同一颗行星继续。
+    want = pick.get('want')
+    ok, back = eval_json(cdp, r"""(() => {
+      const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
+      const planet = s.nodes.find((n) => n.id === %s);
+      const system = planet && s.nodes.find((n) => n.id === planet.parentId);
+      if (!planet || !system) return JSON.stringify({ ok: false });
+      s.enterSystemDetail(system);
+      return JSON.stringify({ ok: true, planet: planet.id });
+    })()""" % json.dumps(want), required=('ok',), desc='G 段回到恒星系')
+    if not ok or not back.get('ok'):
+        return False, f'G 段回不到恒星系：{back}'
+    time.sleep(0.8)
+    ok, why = open_3d(cdp, timeout=25)
+    if not ok:
+        return False, f'G 段打开 3D 失败：{why}'
+    time.sleep(0.5)
+
+    # G1 存类别 → 下拉出现 → 选中 → 贴图换色 → 删除闸门（全走界面入口）
+    ok, g1 = eval_json(cdp, r""" (async () => {
+      const s = document.querySelector('#app').__vue_app__._instance.setupState.store;
+      const planet = s.nodes.find((n) => n.id === %s);
+      const root = document.querySelector('[data-testid="system-3d"]');
+      const pm = root && root.__vueParentComponent && root.__vueParentComponent.setupState;
+      if (!planet || !pm) return JSON.stringify({ stage: 'setup', planet: !!planet, pm: !!pm });
+      const out = { stage: 'g1' };
+      pm.picked = {
+        id: planet.id,
+        name: planet.displayName || planet.name,
+        classId: planet.planetClass || 'arctic',
+        kind: 'planet',
+      };
+      await new Promise((r) => setTimeout(r, 380));
+
+      // ① 用拾色器把这颗调成**好认的颜色**（存类别时会被抄进类别定义）
+      const color = document.querySelector('[data-testid="sys3d-color-base"]');
+      out.colorInput = !!color;
+      if (color) {
+        color.value = '#ff00ff';
+        color.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      await new Promise((r) => setTimeout(r, 380));
+
+      // ② 名字 + “存为类别”
+      const name = document.querySelector('[data-testid="sys3d-preset-name"]');
+      out.nameInput = !!name;
+      if (name) {
+        name.value = '机检熔金';
+        name.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      await new Promise((r) => setTimeout(r, 120));
+      const saveBtn = document.querySelector('[data-testid="sys3d-class-save"]');
+      out.saveBtn = !!saveBtn;
+      out.saveDisabled = saveBtn ? !!saveBtn.disabled : null;
+      if (saveBtn) saveBtn.click();
+      await new Promise((r) => setTimeout(r, 520));
+
+      out.classes = (s.planetClasses || []).map((c) => ({
+        id: c.id, label: c.label, base: c.base, kind: c.kind, seed: c.seed,
+      }));
+      // 落盘链路的**第一段**：画布 → 项目载荷（存盘时 projectStore 拿到的就是它）
+      out.payload = (s.exportCanvasToProject().planetClasses || []).map((c) => c.id);
+      const sel = document.querySelector('[data-testid="sys3d-class"]');
+      out.optionIds = sel ? Array.from(sel.querySelectorAll('option')).map((o) => o.value) : [];
+      out.groupLabels = sel ? Array.from(sel.querySelectorAll('optgroup')).map((g) => g.label) : [];
+
+      if (out.classes.length) {
+        const cid = out.classes[0].id;
+        out.customId = cid;
+        sel.value = cid;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        await new Promise((r) => setTimeout(r, 520));
+        out.savedClass = (s.nodes.find((n) => n.id === planet.id) || {}).planetClass || null;
+        out.subLabel = (document.querySelector('[data-testid="sys3d-card"] .sys3d-card-sub') || {}).textContent || '';
+
+        // ③ 贴图真的换了：读球面贴图 canvas 的像素（不是截图猜颜色）
+        const hit = (pm.pickables || []).find((x) => x.body && x.body.id === planet.id);
+        const img = hit && hit.mat && hit.mat.map && hit.mat.map.image;
+        if (img && typeof img.getContext === 'function') {
+          const g = img.getContext('2d');
+          const px = g.getImageData(0, 0, img.width, img.height).data;
+          let near = 0;
+          for (let i = 0; i < px.length; i += 4) {
+            if (Math.abs(px[i] - 255) <= 2 && px[i + 1] <= 2 && Math.abs(px[i + 2] - 255) <= 2) near += 1;
+          }
+          out.magenta = near;
+          out.texW = img.width;
+          out.texH = img.height;
+        }
+
+        // ④ 删除闸门：这个类别正被这颗行星用着 → 必须拒绝，而且回执要写明原因
+        const mg = document.querySelector('[data-testid="sys3d-class-manage"]');
+        out.manageExists = !!mg;
+        if (mg) {
+          mg.value = cid;
+          mg.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        await new Promise((r) => setTimeout(r, 150));
+        const del = document.querySelector('[data-testid="sys3d-class-delete"]');
+        out.deleteExists = !!del;
+        if (del) del.click();
+        await new Promise((r) => setTimeout(r, 260));
+        out.afterDeleteTry = (s.planetClasses || []).length;
+        out.status = (document.querySelector('[data-testid="system-3d-status"]') || {}).textContent || '';
+      }
+      return JSON.stringify(out);
+    })() """ % json.dumps(want), required=None, desc='G1 存为类别 / 选中 / 贴图像素 / 删除闸门')
+    if not ok or not isinstance(g1, dict):
+        return False, f'G1 探针失败：{g1}'
+    if g1.get('stage') == 'setup':
+        return False, f'G1 装置不齐：{g1}'
+    for key, msg in (
+        ('colorInput', 'G1 卡片里没有拾色器'),
+        ('nameInput', 'G1 卡片里没有名字输入'),
+        ('saveBtn', 'G1 卡片里没有“存为类别”按钮'),
+    ):
+        if not g1.get(key):
+            return False, f'{msg}：{g1}'
+    if g1.get('saveDisabled'):
+        return False, f"G1 “存为类别”在项目态是灰的：{g1}"
+    classes = g1.get('classes') or []
+    if len(classes) != 1:
+        return False, f"G1 存类别失败（store.planetClasses={classes}）"
+    cls = classes[0]
+    if cls.get('label') != '机检熔金':
+        return False, f"G1 类别名不对：{cls}"
+    if cls.get('base') != '#ff00ff':
+        return False, f"G1 类别没抄到拾色器的主色：{cls}"
+    if cls.get('kind') != 'terra':
+        return False, f"G1 类别 kind 不对：{cls}"
+    if cls.get('seed') != 'arctic':
+        return False, f"G1 类别 seed 没记住祖类别（F 段把它改成了 arctic）：{cls}"
+    cid = g1.get('customId')
+    if cid not in g1.get('payload', []):
+        return False, f"G1 类别没进项目载荷（存盘必丢）：payload={g1.get('payload')}"
+    if cid not in g1.get('optionIds', []):
+        return False, f"G1 类别没出现在类型下拉里：options={g1.get('optionIds')}"
+    if '本项目自定义' not in (g1.get('groupLabels') or []):
+        return False, f"G1 类型下拉没有“本项目自定义”分组：{g1.get('groupLabels')}"
+    if g1.get('savedClass') != cid:
+        return False, f"G1 选中类别后 node.planetClass 没落库：{g1}"
+    if '机检熔金' not in (g1.get('subLabel') or ''):
+        return False, f"G1 卡片没显示类别名：{g1.get('subLabel')!r}"
+    if (g1.get('texW'), g1.get('texH')) != (512, 256):
+        return False, f"G1 贴图尺寸异常：{g1.get('texW')}x{g1.get('texH')}"
+    if (g1.get('magenta') or 0) < 20000:
+        return False, (f"G1 球面贴图没换成类别主色（#ff00ff 像素 {g1.get('magenta')} / 131072）"
+                       ' —— 下拉选了但贴图没重建？')
+    if not (g1.get('manageExists') and g1.get('deleteExists')):
+        return False, f"G1 缺类别库删除入口：{g1}"
+    if g1.get('afterDeleteTry') != 1:
+        return False, f"G1 还有行星在用的类别被删掉了（数据会丢）：{g1}"
+    if '在用' not in (g1.get('status') or ''):
+        return False, f"G1 删除被拒但没说明原因：{g1.get('status')!r}"
+
+    # G2 存盘 → 关项目 → 重开：类别与选择必须都回来（真实载荷往返，不靠内存）
+    ok, g2 = eval_json(cdp, r""" (async () => {
+      const app = document.querySelector('#app').__vue_app__;
+      const s = app._instance.setupState.store;
+      const { useProjectStore } = await import('/src/store/projectStore.js');
+      const { planetClassDef } = await import('/src/utils/planetArt.js');
+      const ps = useProjectStore(app.config.globalProperties.$pinia);
+      const out = { stage: 'g2', want: %s, cid: %s };
+      await window.__probe.flushProject();
+      out.fileClasses = ((window.__probe.projectFile() || {}).planetClasses || []).map((c) => c.id);
+      const closed = await ps.closeProject();
+      out.closed = !!(closed && closed.success);
+      out.clearedOnClose = (s.planetClasses || []).length;
+      const reopened = await ps.openProject(window.__probe.harnessProjectPath);
+      out.reopened = !!(reopened && reopened.success);
+      out.classesAfter = (s.planetClasses || []).map((c) => ({ id: c.id, label: c.label, base: c.base }));
+      out.planetClassAfter = (s.nodes.find((n) => n.id === out.want) || {}).planetClass || null;
+      try { out.defAfter = planetClassDef(out.cid).label; } catch (e) { out.defAfter = 'ERR:' + e; }
+      return JSON.stringify(out);
+    })() """ % (json.dumps(want), json.dumps(cid)), required=None, desc='G2 存盘 / 关项目 / 重开')
+    if not ok or not isinstance(g2, dict):
+        return False, f'G2 探针失败：{g2}'
+    if cid not in (g2.get('fileClasses') or []):
+        return False, f"G2 类别没写进项目文件（flush 后磁盘载荷）：{g2}"
+    if not g2.get('closed'):
+        return False, f"G2 关项目失败：{g2}"
+    if g2.get('clearedOnClose') != 0:
+        return False, f"G2 关项目后注册表/状态没清（会串到知识库态）：{g2}"
+    if not g2.get('reopened'):
+        return False, f"G2 重开项目失败：{g2}"
+    if [c.get('id') for c in (g2.get('classesAfter') or [])] != [cid]:
+        return False, f"G2 重开后类别没回来：{g2}"
+    if g2.get('planetClassAfter') != cid:
+        return False, f"G2 重开后行星的类型没回来：{g2}"
+    if g2.get('defAfter') != '机检熔金':
+        return False, f"G2 重开后渲染层注册表认不出这个类别：{g2}"
+
+    # G3 删除语义：在用 → 拒绝；改成内置类型 → 可删；撤销 → 类别与注册表一起回来
+    ok, g3 = eval_json(cdp, r""" (async () => {
+      const app = document.querySelector('#app').__vue_app__;
+      const s = app._instance.setupState.store;
+      const { planetClassDef, getPlanetDisc } = await import('/src/utils/planetArt.js');
+      const out = { stage: 'g3', want: %s, cid: %s };
+      // 2D 圆盘走同一个类别解析口：注册表里有这个类别，圆盘就必须出得来（不是只给 3D 用）
+      const disc = getPlanetDisc(out.cid, 48);
+      out.disc = { ok: !!(disc && disc.width === 48), w: disc ? disc.width : null };
+      const refused = s.removePlanetClass(out.cid);
+      out.refused = !!(refused && refused.ok === false);
+      out.refusedReason = (refused && refused.reason) || '';
+      out.stillThere = (s.planetClasses || []).some((c) => c.id === out.cid);
+      s.updateNode(out.want, { planetClass: 'continental' });
+      await new Promise((r) => setTimeout(r, 120));
+      const removed = s.removePlanetClass(out.cid);
+      out.removed = !!(removed && removed.ok === true);
+      out.afterRemove = (s.planetClasses || []).length;
+      out.defAfterRemoveId = planetClassDef(out.cid).id;
+      s.undo();
+      await new Promise((r) => setTimeout(r, 120));
+      out.afterUndo = (s.planetClasses || []).length;
+      out.defAfterUndo = planetClassDef(out.cid).label;
+      return JSON.stringify(out);
+    })() """ % (json.dumps(want), json.dumps(cid)), required=None, desc='G3 删除语义 / 撤销')
+    if not ok or not isinstance(g3, dict):
+        return False, f'G3 探针失败：{g3}'
+    if not g3.get('refused') or not g3.get('stillThere'):
+        return False, f"G3 在用中的类别没被拒绝删除：{g3}"
+    if '在用' not in (g3.get('refusedReason') or ''):
+        return False, f"G3 拒绝删除但没说原因：{g3}"
+    if not g3.get('removed') or g3.get('afterRemove') != 0:
+        return False, f"G3 改成内置类型后仍删不掉：{g3}"
+    if g3.get('defAfterRemoveId') != 'continental':
+        return False, f"G3 删掉后注册表还认那个类别（会画鬼影）：{g3}"
+    if g3.get('afterUndo') != 1 or g3.get('defAfterUndo') != '机检熔金':
+        return False, f"G3 撤销后类别/注册表没回来：{g3}"
+
+    detail += (' | G: 存类别→下拉→贴图 #ff00ff→存盘重开→在用拒删/撤销恢复'
+               f'（magenta={g1.get("magenta")}px）')
 
     return True, f'3D 观景：开→渲染→关 6 轮，资源每次归零，2D 未重建 | {detail}'
