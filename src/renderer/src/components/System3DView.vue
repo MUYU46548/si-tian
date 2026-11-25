@@ -23,6 +23,15 @@
           <option v-for="c in planetClasses" :key="c.id" :value="c.id">{{ c.label }}</option>
         </select>
       </label>
+      <label class="sys3d-card-row" title="逐颗改色：只影响这一颗，写进项目文件的 planetColors（2D 圆盘同步变）">
+        <span>颜色</span>
+        <input class="sys3d-color" type="color" data-testid="sys3d-color-base"
+               :value="pickedColors.base" title="地表主色（海/底色）" @input="onColor('base', $event)" />
+        <input class="sys3d-color" type="color" data-testid="sys3d-color-land"
+               :value="pickedColors.land" title="陆块色" @input="onColor('land', $event)" />
+        <input class="sys3d-color" type="color" data-testid="sys3d-color-atmo"
+               :value="pickedColors.atmosphere" title="大气边光色" @input="onColor('atmosphere', $event)" />
+      </label>
       <button class="sys3d-card-go" data-testid="sys3d-drill" @click="onDrill">
         进入行星地图 <Icon name="chevron-right" :size="12" />
       </button>
@@ -73,7 +82,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import Icon from './Icon.vue';
 import {
   PLANET_CLASSES, SeededRng, atmosphereForClass, getCloudTexture, getPlanetTexture,
-  hashString, hexAlpha, planetClassLabel,
+  hashString, hexAlpha, paletteForClass, planetClassLabel,
 } from '../utils/planetArt.js';
 import { SYS3D_QUALITY, nextQualityLevel } from '../utils/system3dScene.js';
 
@@ -81,7 +90,7 @@ const props = defineProps({
   // buildSystem3dScene() 的产物；父组件每次打开时现算
   spec: { type: Object, required: true },
 });
-const emit = defineEmits(['close', 'select-node', 'set-class']);
+const emit = defineEmits(['close', 'select-node', 'set-class', 'set-colors']);
 
 const host = ref(null);
 const fpsEl = ref(null);
@@ -127,7 +136,55 @@ function onPointerUp(e) {
   picked.value = hit ? { ...hit.body } : null;
 }
 
-/** 改类型：**当场换贴图** + 落数据（`node.planetClass`，走父组件的 store 写口） */
+/** 卡上三个拾色器当前显示的值（类别默认 + 这一颗的覆盖） */
+const pickedColors = computed(() => {
+  const p = picked.value;
+  const d = p ? paletteForClass(p.classId, p.palette) : null;
+  if (!d) return { base: "#888888", land: "#888888", atmosphere: "#888888" };
+  return {
+    base: d.base,
+    land: (Array.isArray(d.land) && d.land[0]) || d.base,
+    atmosphere: d.atmosphere || d.base,
+  };
+});
+
+/** 把一份色板**当场画到这颗球上**（贴图重建 + 大气色/浓淡）。改色和改类型都走它。 */
+function applyPalette(hit, palette) {
+  if (!hit || !THREE) return;
+  const tex = new THREE.CanvasTexture(getPlanetTexture(hit.body.classId, palette));
+  tex.encoding = THREE.sRGBEncoding;
+  track(tex);
+  hit.mat.map = tex;
+  hit.mat.needsUpdate = true;
+  if (hit.atmoMat) {
+    const atmo = atmosphereForClass(hit.body.classId, palette);
+    hit.atmoMat.uniforms.uColor.value.set(atmo.color);
+    hit.atmoMat.userData.baseStrength = atmo.strength * ATMO_GAIN;
+    hit.atmoMat.uniforms.uStrength.value = atmo.strength * ATMO_GAIN * atmoScale;
+  }
+}
+
+/**
+ * 拾色器改动：只改**这一颗**（写 planetColors 覆盖，不动类别默认值）。
+ * 三个口：base = 地表主色（海/底色）、land = 陆块色（数组只填第一档）、atmosphere = 大气色。
+ */
+function onColor(slot, e) {
+  const p = picked.value;
+  const v = String((e && e.target && e.target.value) || "");
+  if (!p || !/^#[0-9a-fA-F]{6}$/.test(v)) return;
+  const colors = { ...(p.palette || {}) };
+  if (slot === "land") colors.land = [v];
+  else colors[slot] = v;
+  const hit = pickables.find((x) => x.body.id === p.id);
+  if (hit) {
+    hit.body.palette = colors;
+    applyPalette(hit, colors);
+  }
+  picked.value = { ...p, palette: colors };
+  emit("set-colors", { id: p.id, colors });
+}
+
+/** 改类型：**当场换贴图/大气** + 落数据（planetClass 走父组件的 store 写口） */
 function onClassChange(e) {
   const id = picked.value && picked.value.id;
   const classId = String(e.target.value || '');
@@ -1478,6 +1535,11 @@ defineExpose({
   background: #0f172a; color: #dbe4f3;
   border: 1px solid rgba(148, 163, 184, 0.4); border-radius: 4px;
   padding: 2px 6px; font-size: 12px;
+}
+.sys3d-color {
+  width: 30px; height: 20px;
+  padding: 0; border: 1px solid rgba(148, 163, 184, 0.45); border-radius: 4px;
+  background: transparent; cursor: pointer;
 }
 .sys3d-card-go {
   display: inline-flex; align-items: center; justify-content: center; gap: 4px;

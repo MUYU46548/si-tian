@@ -71,6 +71,7 @@
       @close="show3d = false"
       @select-node="on3dSelectNode"
       @set-class="on3dSetClass"
+      @set-colors="on3dSetColors"
     />
   </div>
 </template>
