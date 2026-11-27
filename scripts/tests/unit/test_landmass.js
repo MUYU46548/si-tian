@@ -214,13 +214,32 @@ async function main() {
   });
 
   check('a8 参数归一化：越界夹取留 warning；形状枚举只认白名单', () => {
-    const { params, warnings } = P.normalizeLandParams({ seed: -5, continentCount: 99, landRatio: 2, shape: 'blob', provinceCount: 9999 });
+    const { params, warnings } = P.normalizeLandParams({ seed: -5, continentCount: 99, landRatio: 2, shape: 'blob', provinceCount: 99999 });
     const keys = new Set(warnings.map((w) => w.key));
     for (const k of ['seed', 'continentCount', 'landRatio', 'shape', 'provinceCount']) assert(keys.has(k), `${k} 改了却没 warning`);
     assert(params.seed === 0 && params.continentCount === 8 && params.landRatio === 0.55, `夹取不对：${JSON.stringify(params)}`);
     assert(params.shape === 'continent', `非法形状应回默认，实际 ${params.shape}`);
-    assert(params.provinceCount === 600, `provinceCount 上界夹取失败：${params.provinceCount}`);
+    assert(params.provinceCount === 20000, `provinceCount 上界夹取失败：${params.provinceCount}`);
     return `${warnings.length} 条 warning`;
+  });
+
+  // 2026-11-27 尺度三件套：世界尺寸 + 省份数 → 地形格数（唯一换算）
+  check('a8b 尺度：世界框按参数生成；地形格数 0=自动、随省份数增长、手填优先', () => {
+    const small = P.normalizeLandParams({ provinceCount: 180 }).params;
+    const large = P.normalizeLandParams({ provinceCount: 10000 }).params;
+    const frame = P.landWorldFrame(small);
+    assert(frame.maxX - frame.minX === 1800 && frame.maxY - frame.minY === 1000,
+      `默认世界框不是 1800×1000：${JSON.stringify(frame)}`);
+    const cSmall = P.resolveLandTerrainCells(small);
+    const cLarge = P.resolveLandTerrainCells(large);
+    assert(cSmall >= 160 && cSmall <= 220, `180 省自动格数应在 160~220，实际 ${cSmall}`);
+    assert(cLarge >= 1000, `1 万省自动格数应 ≥1000，实际 ${cLarge}`);
+    const manual = P.resolveLandTerrainCells({ ...large, terrainCells: 512 });
+    assert(manual === 512, `手填 512 应优先，实际 ${manual}`);
+    // 世界等比放大、省份数不变 → 每省同比变大，格数不应跟着暴涨
+    const wide = P.resolveLandTerrainCells({ ...small, worldWidth: 7200, worldHeight: 4000 });
+    assert(Math.abs(wide - cSmall) < 20, `等比放大世界后格数漂了：${cSmall} → ${wide}`);
+    return `180 省→${cSmall} / 1 万省→${cLarge} / 手填 ${manual}`;
   });
 
   check('a9 确定性源码扫描：landmass 里没有 Math.random', () => {

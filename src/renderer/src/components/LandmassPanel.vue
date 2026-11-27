@@ -18,7 +18,26 @@
     </div>
 
     <div class="lgen-rows">
-      <div v-for="f in fields" :key="f.key" class="lgen-row" :title="f.hint">
+      <!-- 2026-11-27（尺度三件套）：新图的世界框不再写死 1800×1000。省越多/越想放大看
+           省内细节，就把世界框开大；地形精度默认按“省份数 × 陆地占比”自动算。 -->
+      <div class="lgen-row" title="新地图的世界坐标范围（已有地图不会因此缩回已画范围）。省多时把世界框开大，省在世界上才有足够尺寸。">
+        <label>世界尺寸</label>
+        <input class="lgen-num" type="number" min="1200" max="20000" step="100"
+               v-model.number="params.worldWidth" data-testid="lgen-worldWidth" />
+        <span class="lgen-sub">×</span>
+        <input class="lgen-num" type="number" min="800" max="12000" step="100"
+               v-model.number="params.worldHeight" data-testid="lgen-worldHeight" />
+        <span class="lgen-val">{{ params.worldWidth }} × {{ params.worldHeight }}</span>
+      </div>
+      <div class="lgen-note" data-testid="lgen-scale-hint">
+        地形精度：{{ params.terrainCells > 0 ? `${params.terrainCells} 格（手填）` : `自动 ${autoCells} 格` }}；
+        目标约每省直径 6 格。省数 / 世界尺寸改变时自动值跟着变。
+      </div>
+      <div v-if="params.provinceCount >= 2000" class="lgen-warn" data-testid="lgen-scale-warn">
+        省数 {{ params.provinceCount }}：铺底和开图都会明显变慢（地形 {{ autoCells }} 格）。
+        建议先小批量试一张，确认手感再上大规模。
+      </div>
+      <div v-for="f in visibleFields" :key="f.key" class="lgen-row" :title="f.hint">
         <label>{{ f.label }}</label>
         <template v-if="f.kind === 'enum'">
           <select :value="params[f.key]" :data-testid="`lgen-${f.key}`" @change="setEnum(f.key, $event)">
@@ -38,6 +57,9 @@
         <template v-else-if="f.key === 'provinceCount'">
           <input type="range" :min="f.min" :max="f.max" :step="f.step" :value="params[f.key]"
                  data-testid="lgen-provinceCount" @input="setNum(f.key, $event)">
+          <!-- 上万省时滑块太粗：给一个数字框（范围仍走 normalizeLandParams 夹取） -->
+          <input class="lgen-num" type="number" :min="f.min" :max="f.max" :step="f.step"
+                 :value="params[f.key]" data-testid="lgen-provinceCount-num" @change="setNum(f.key, $event)">
           <span class="lgen-val">{{ params[f.key] }}</span>
         </template>
         <template v-else>
@@ -107,7 +129,7 @@ import Icon from './Icon.vue';
 import { useGeodataStore } from '../store/geodata';
 import {
   DEFAULT_LAND_PARAMS, LAND_PARAM_FIELDS, LAND_PRESETS,
-  normalizeLandParams, describeLandParams, rollSeed,
+  normalizeLandParams, describeLandParams, rollSeed, resolveLandTerrainCells,
 } from '../utils/terrainParams';
 import { reliefRgb } from '../utils/landmassRelief';
 // A5（2026-10-29）：面板要知道"这张图上有没有手绘"，只需要**读**（写回的唯一实现在 store）
@@ -122,8 +144,12 @@ const emit = defineEmits(['apply', 'close']);
 const store = useGeodataStore();
 const fields = LAND_PARAM_FIELDS;
 const presets = LAND_PRESETS;
+// 世界尺寸单独一行（数字框，不走滑杆）；其余字段走通用渲染
+const visibleFields = computed(() => fields.filter((f) => f.key !== 'worldWidth' && f.key !== 'worldHeight'));
 
 const params = reactive({ ...DEFAULT_LAND_PARAMS });
+// 自动地形精度（0 = 自动）：随“省份数 / 世界尺寸 / 陆地占比”即时变化，面板上直接看得见
+const autoCells = computed(() => resolveLandTerrainCells(params));
 const activePreset = ref('continent');
 const candidates = ref([]);
 const selected = ref(0);
@@ -150,6 +176,9 @@ function setCanvas(i, el) {
 }
 function fmt(f) {
   if (f.key === 'landRatio') return `${(Number(params[f.key]) * 100).toFixed(0)}%`;
+  if (f.key === 'terrainCells') {
+    return Number(params[f.key]) > 0 ? `${params[f.key]} 格` : `自动 ${autoCells.value} 格`;
+  }
   return f.kind === 'int' ? String(params[f.key]) : Number(params[f.key]).toFixed(2);
 }
 function syncFrom(raw, presetId = '') {
@@ -354,8 +383,15 @@ async function apply() {
   progress.value = '正在铺底切省…';
   try {
     // 轮廓参数用**选中那张候选**（保证应用结果与缩略图一致）；
-    // “铺底块数”只影响切分密度、不影响轮廓，所以取滑块当前值（改完不必重新出候选）。
-    const applyParams = { ...c.params, provinceCount: Number(params.provinceCount) };
+    // “铺底块数/世界尺寸/地形精度”是应用期参数（不影响轮廓），取滑块**当前值** ——
+    // 候选是改这些之前生成的，直接从 c.params 取会把新值丢掉（2026-11-27 与 provinceCount 同一条坑）。
+    const applyParams = {
+      ...c.params,
+      provinceCount: Number(params.provinceCount),
+      worldWidth: Number(params.worldWidth),
+      worldHeight: Number(params.worldHeight),
+      terrainCells: Number(params.terrainCells),
+    };
     const r = await store.generateLandmass(props.baseMapKey, applyParams, {
       force: props.hasTerrain,
       keepHandEdits: keepHandEdits.value,

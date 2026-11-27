@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """用例 152：**造陆**（P0-2，2026-10-25）—— 参数生成大陆轮廓 + 铺底切省 + 一条 undo
 
@@ -315,6 +315,33 @@ JS_SCALE = r""" (async () => {
     message: r ? String(r.message || '').slice(0, 120) : '' });
 })() """.replace('__STORE__', STORE).replace('__KEY__', repr(KEY))
 
+# 2026-11-27 尺度三件套：**空底图** → 世界尺寸 6400×4000 + 400 省
+# 必须用新底图（已有 genBBox 的图沿用旧框，这正是“已有地图不缩回”的语义）
+JS_WORLD = r""" (async () => {
+  const s = __STORE__, K = __KEY__ + '-world';
+  if (!s.baseMaps[K]) s.addBaseMap(K, { name: '世界尺寸测试' });
+  const t0 = performance.now();
+  const r = await s.generateLandmass(K, {
+    seed: 5, continentCount: 2, shape: 'continent', landRatio: 0.32,
+    provinceCount: 400, worldWidth: 6400, worldHeight: 4000,
+  }, { force: true });
+  const ms = Math.round(performance.now() - t0);
+  const hm = s.getHeightmapFor(K);
+  const b = hm && hm.genBBox;
+  const n = ((s.baseMaps[K] || {}).terrain || []).length;
+  const out = {
+    ok: !!(r && r.ok), ms, n,
+    w: b && Number.isFinite(b.maxX) ? Math.round((b.maxX - b.minX) * 100) / 100 : null,
+    h: b && Number.isFinite(b.maxY) ? Math.round((b.maxY - b.minY) * 100) / 100 : null,
+    cellsX: hm && hm.grid ? hm.grid.cellsX : null,
+    message: r ? String(r.message || '').slice(0, 120) : '',
+  };
+  s.undo();
+  await new Promise(r => setTimeout(r, 300));
+  out.after = ((s.baseMaps[K] || {}).terrain || []).length;
+  return JSON.stringify(out);
+})() """.replace('__STORE__', STORE).replace('__KEY__', repr(KEY))
+
 
 JS_KEEP_HAND = r""" (async () => {
   const s = __STORE__, K = __KEY__;
@@ -554,6 +581,22 @@ def run(cdp):
         if scale.get('after') != 0:
             fails.append(f"🔴 400 省那次撤销没退回：{scale.get('n')} → {scale.get('after')}")
         notes.append(f"400 省：{scale.get('n')} 省 / {scale.get('ms')} ms / 一条 undo 归零")
+
+    world = _ev(cdp, JS_WORLD, '世界尺寸 6400×4000 + 400 省')
+    if world.get('__err__'):
+        fails.append(f'世界尺寸探针失败：{world}')
+    else:
+        if not world.get('ok'):
+            fails.append(f"🔴 世界尺寸造陆失败：{world.get('message')}")
+        if abs((world.get('w') or 0) - 6400) > 1 or abs((world.get('h') or 0) - 4000) > 1:
+            fails.append(f"🔴 世界框没按参数：{world.get('w')}×{world.get('h')}（期望 6400×4000）")
+        if not (240 <= (world.get('cellsX') or 0) <= 300):
+            fails.append(f"🔴 自动地形格数不对：cellsX={world.get('cellsX')}（400 省 / 6400×4000 期望约 268）")
+        if (world.get('n') or 0) < 300:
+            fails.append(f"🔴 世界尺寸那次只铺出 {world.get('n')} 省")
+        if world.get('after') != 0:
+            fails.append(f"🔴 世界尺寸那次撤销没退回：{world.get('n')} → {world.get('after')}")
+        notes.append(f"世界 6400×4000：{world.get('n')} 省 / 地形 {world.get('cellsX')} 格 / {world.get('ms')} ms / 一条 undo 归零")
 
     summary = ' | '.join(notes)
     return (not fails), (summary if not fails else ' | '.join(fails) + ' ## ' + summary)

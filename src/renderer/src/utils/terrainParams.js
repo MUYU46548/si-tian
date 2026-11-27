@@ -310,9 +310,25 @@ export const LAND_PARAM_FIELDS = Object.freeze([
     key: 'sizeVariance', label: '大小差异', kind: 'float', min: 0, max: 1, step: 0.05, def: 0.4,
     hint: '0 = 各陆块一样大；1 = 最大块约是最小块的 4 倍',
   },
+  // ── 世界尺寸（2026-11-27）：新地图的坐标范围 ────────────────────────────────
+  // 以前图幅是写死的 1800×1000（或沿用已有省份外扩 2%）—— 1 万省时每个省只有
+  // 十几世界单位，地形格（192 格）比省还大，根本画不出省内的谷和山。
+  // 现在创建时就把世界框定下来；已有地图改这里**不会缩回**已画范围（只对新图生效）。
   {
-    key: 'provinceCount', label: '铺底块数', kind: 'int', min: 20, max: 600, step: 10, def: 180,
-    hint: '造陆后用现有 Voronoi 铺底切成多少省（415 省量级请填 400+，会走分批让帧）',
+    key: 'worldWidth', label: '世界宽', kind: 'int', min: 1200, max: 20000, step: 100, def: 1800,
+    hint: '新地图的坐标宽度（世界单位）。省越多、越想放大看省内细节，就把世界框开大；已有地图不会因此缩回。',
+  },
+  {
+    key: 'worldHeight', label: '世界高', kind: 'int', min: 800, max: 12000, step: 100, def: 1000,
+    hint: '新地图的坐标高度。建议保持与宽度接近 16:9 / 16:10，和画布比例一致。',
+  },
+  {
+    key: 'terrainCells', label: '地形精度', kind: 'int', min: 0, max: 2048, step: 32, def: 0,
+    hint: '0 = 自动：按“省份数 × 陆地占比”定，目标约每省直径 6 格。手填 192–2048 可覆盖（省多时别低于 512）。',
+  },
+  {
+    key: 'provinceCount', label: '铺底块数', kind: 'int', min: 20, max: 20000, step: 100, def: 180,
+    hint: '造陆后用现有 Voronoi 铺底切成多少省。几百省填 400+；几千/上万省会分批让帧，耗时会明显变长。',
   },
 ]);
 
@@ -365,12 +381,44 @@ export function toLandmassOptions(params) {
   return normalizeLandParams(params).params;
 }
 
+/**
+ * 新地图的世界框（以原点为中心）。
+ * ⚠️ 只对**空图**生效：已有省份 / 已记 `genBBox` 的图由 store 沿用旧范围，不会被这个参数缩回。
+ */
+export function landWorldFrame(params = {}) {
+  const p = normalizeLandParams(params).params;
+  const w = Math.max(200, p.worldWidth);
+  const h = Math.max(200, p.worldHeight);
+  return { minX: -w / 2, minY: -h / 2, maxX: w / 2, maxY: h / 2 };
+}
+
+/**
+ * 地形格数（`cellsAcross`）的**唯一换算**（2026-11-27，尺度三件套之一）。
+ *
+ * 目标：平均一个省的直径上约有 **6 个地形格** —— 一个省里能放下谷/山，而不是一格盖一省。
+ *   省面积 ≈ `landRatio·W·H/N`，直径 ≈ √面积；格宽 = W/cells
+ *   ⇒ cells ≈ 6·W/直径 = 6·√(N·(W/H)/landRatio)。
+ *
+ * `terrainCells > 0` 时手填优先；否则自动。结果夹在 96..2048
+ * （2048 是当前单机可接受的数据量上限；再高要先解决开图分段/存储）。
+ */
+export function resolveLandTerrainCells(params = {}) {
+  const p = normalizeLandParams(params).params;
+  if (p.terrainCells > 0) return Math.round(p.terrainCells);
+  const k = 6;                                   // 每省直径上的地形格数
+  const cells = k * Math.sqrt(
+    (p.provinceCount * (p.worldWidth / Math.max(1, p.worldHeight))) / Math.max(0.05, p.landRatio),
+  );
+  return Math.min(2048, Math.max(96, Math.round(cells)));
+}
+
 /** 中文摘要（回执 / 面板一行） */
 export function describeLandParams(params) {
   const p = normalizeLandParams(params).params;
   const label = { continent: '圆润大陆', elongated: '长条大陆', archipelago: '群岛' }[p.shape] || p.shape;
   return `种子 ${p.seed} · ${p.continentCount} 陆块 · ${label} · 占比 ${(p.landRatio * 100).toFixed(0)}%`
-    + ` · 崎岖 ${p.roughness.toFixed(2)} · 大小差 ${p.sizeVariance.toFixed(2)} · 铺 ${p.provinceCount} 省`;
+    + ` · 崎岖 ${p.roughness.toFixed(2)} · 大小差 ${p.sizeVariance.toFixed(2)}`
+    + ` · 世界 ${p.worldWidth}×${p.worldHeight} · 地形 ${resolveLandTerrainCells(p)} 格 · 铺 ${p.provinceCount} 省`;
 }
 
 /** 稳定 key（候选缓存 / 用例断言） */

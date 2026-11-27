@@ -776,7 +776,11 @@ export function generateLandmass(params, bbox) {
   const maskCells = 448;
   const maskRows = Math.max(24, Math.round((maskCells - 1) * (H / Math.max(1, W))) + 1);
   const landMask = rasterizeLandMask(rings, bbox, maskCells, maskRows);
-  const terrainCells = Math.round(170 + roughness * 30);
+  // 地形格数：2026-11-27 起由造陆参数显式给（`terrainCells`，已由 `resolveLandTerrainCells`
+  // 按“省份数 × 陆地占比”换算好）；旧调用/测试没给时保留原来的 170+崎岖度×30。
+  const terrainCells = Number.isFinite(Number(params.terrainCells)) && Number(params.terrainCells) > 0
+    ? Math.min(2048, Math.max(96, Math.round(Number(params.terrainCells))))
+    : Math.round(170 + roughness * 30);
   const hm = synthesizeHeightmapFromTerrain(
     rings.map((r) => ({ rings: [r.points, ...(r.holes || [])] })),
     {

@@ -61,6 +61,7 @@ import { generateLandmass as buildLandmass } from '../../utils/landmass';
 import { activeHandEdits, transferHandEdits } from '../../utils/handEdits';
 import {
   normalizeLandParams, toLandmassOptions, describeLandParams, candidateSeed,
+  landWorldFrame, resolveLandTerrainCells,
   normalizeCultureParams, describeCultureParams,
 } from '../../utils/terrainParams';
 // P0-4（2026-10-25）：文化/宗教/势力派生的纯函数层（最远点采样 + 省份摘要 + 势力方案）
@@ -2060,7 +2061,7 @@ export function createProvinceEditingModule(ctx) {
    * 造陆区域：① 优先沿用上次的图幅（见 `recordedLandBBox`，不缩）；② 与“现有省份包围盒
    * 外扩 4%”取并集（用户手涂到框外时跟着长，不会被裁掉）；③ 都没有 → 默认区域。
    */
-  function landmassBBox(key) {
+  function landmassBBox(key, frame = null) {
     let box = null;
     for (const p of rawProvinces(key)) {
       const bb = provinceBBox(p);
@@ -2081,7 +2082,13 @@ export function createProvinceEditingModule(ctx) {
         maxY: box.maxY + (box.maxY - box.minY) * 0.02,
       }
       : null;
-    return unionLandBBox(recordedLandBBox(key), fromProvinces) || { ...LANDMASS_BBOX_DEFAULT };
+    // 2026-11-27：空图用“世界尺寸”参数定框（新图创建入口）；已有图沿用旧框
+    // （改世界尺寸不会缩回，也不会自动扩 —— 扩图幅是另一件事，别在这里静默改变已有内容）
+    const fromFrame = frame
+      && [frame.minX, frame.minY, frame.maxX, frame.maxY].every((v) => Number.isFinite(v))
+      && frame.maxX - frame.minX > 10 && frame.maxY - frame.minY > 10
+      ? { ...frame } : null;
+    return unionLandBBox(recordedLandBBox(key), fromProvinces) || fromFrame || { ...LANDMASS_BBOX_DEFAULT };
   }
 
   /**
@@ -2094,11 +2101,17 @@ export function createProvinceEditingModule(ctx) {
     if (!m) return { ok: false, rejected: 'no-basemap', message: '先选一张底图', candidates: [] };
     const norm = normalizeLandParams(paramsIn);
     const count = Math.max(1, Math.min(4, Math.floor(Number(opts.count) || 3)));
-    const bbox = landmassBBox(key);
+    // 2026-11-27：新图的世界框来自“世界尺寸”参数；已有图由 landmassBBox 沿用旧框。
+    const bbox = landmassBBox(key, landWorldFrame(norm.params));
+    // 候选缩略图用粗档地形（最多 384 格）：三张候选各算一张全精度高度图会把面板拖死；
+    // **应用**时才用 `resolveLandTerrainCells` 的全精度（见 generateLandmass）。
+    const previewCells = Math.min(384, resolveLandTerrainCells(norm.params));
     const candidates = [];
     for (let i = 0; i < count; i++) {
       const params = { ...norm.params, seed: candidateSeed(norm.params.seed, i) };
-      const gen = buildLandmass(toLandmassOptions(params), bbox);
+      const opts = toLandmassOptions(params);
+      opts.terrainCells = previewCells;
+      const gen = buildLandmass(opts, bbox);
       candidates.push({
         id: `land-${norm.params.seed}-${i}`,
         index: i,
@@ -2152,8 +2165,12 @@ export function createProvinceEditingModule(ctx) {
       };
     }
     const norm = normalizeLandParams(paramsIn);
-    const bbox = landmassBBox(key);
-    const gen = buildLandmass(toLandmassOptions(norm.params), bbox);
+    const bbox = landmassBBox(key, landWorldFrame(norm.params));
+    const landOpts = toLandmassOptions(norm.params);
+    // 2026-11-27：地形格数由“世界尺寸 × 省份数 × 陆地占比”自动换算（或用户手填）。
+    // 以前写死 170+崎岖度×30 —— 1 万省时一格比一个省还大，省内的谷/山根本不存在。
+    landOpts.terrainCells = resolveLandTerrainCells(norm.params);
+    const gen = buildLandmass(landOpts, bbox);
     if (!gen.rings.length) return { ok: false, rejected: 'no-rings', message: '没生成出任何陆地轮廓' };
     const shapes = gen.rings.map((r) => ({
       id: `land_outline_${norm.params.seed}_${r.id}`,
