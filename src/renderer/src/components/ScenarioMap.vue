@@ -5043,7 +5043,7 @@ onMounted(async () => {
   }
   if (!cvs) return;
   ctx.value = cvs.getContext('2d');
-  setRasterRefineHandler(() => render(), () => (baseMapKey.value ? store.getHeightmapFor(baseMapKey.value) : null));
+  setRasterRefineHandler(() => render(), () => (baseMapKey.value ? store.getHeightmapFor(baseMapKey.value) : null)); window.__SITIAN_RENDER__ = render; window.__SITIAN_OPEN_STAGES__ = { t0: (performance.now ? performance.now() : Date.now()), firstFrameStart: null, fullStart: null };
 
   // P0: 恢复上次使用的底图键（全局配置）——但只在**当前项目里确实存在**这张底图时才用
   if (window.sitianAPI?.getCurrentBaseMapKey) {

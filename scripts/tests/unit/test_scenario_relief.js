@@ -21,6 +21,7 @@ const { pathToFileURL } = require('url');
 
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 const LAYERS = path.join(ROOT, 'src', 'renderer', 'src', 'scenario', 'layers');
+const SCENARIO = path.join(ROOT, 'src', 'renderer', 'src', 'scenario');
 
 const results = [];
 function check(name, fn) {
@@ -65,6 +66,9 @@ function makeCtx() {
 async function main() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sitian-relief-'));
   fs.cpSync(LAYERS, path.join(tmp, 'layers'), { recursive: true });
+  // layers 里的 background/coast 现在 import '../openFast'（开图快路径原型）——
+  // 必须把它一起搬进临时目录，否则 import 直接 ERR_MODULE_NOT_FOUND（整个文件红）
+  fs.copyFileSync(path.join(SCENARIO, 'openFast.js'), path.join(tmp, 'openFast.js'));
   fs.writeFileSync(path.join(tmp, 'package.json'), JSON.stringify({ type: 'module' }));
   const B = await import(pathToFileURL(path.join(tmp, 'layers', 'background.js')).href);
   const P = await import(pathToFileURL(path.join(tmp, 'layers', 'provinces.js')).href);

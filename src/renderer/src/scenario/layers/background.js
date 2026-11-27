@@ -15,6 +15,8 @@
 //   reliefPatch(c,v)   视口块（可选）：整幅底图只铺底，清晰度由这块补。层的纪律是
 //                      **依赖一律从 view 取**，所以这里不 import 渲染模块，只调这个回调。
 
+import { openFastSkipHeavy } from '../openFast.js';
+
 /** 底色 + 地形浮雕底 + 世界坐标网格（空底图时也画，用户据此判断"这块地是没有数据还是没加载"） */
 export function drawBackgroundLayer(c, view) {
   const tl = view.screenToWorld(0, 0);
@@ -53,6 +55,8 @@ export function drawBackgroundLayer(c, view) {
 /** 浮雕底（一张预渲染栅格，drawImage 直接贴；不逐格重绘，见 heightmapRaster 的缓存口径） */
 export function drawRelief(c, view) {
   if (!view.showRelief || typeof view.reliefRaster !== 'function') return;
+  // 开图快路径（原型）：首帧不烘浮雕，先让省色块/边界出来；本模块会安排一次全量重绘
+  if (openFastSkipHeavy()) return;
   let r = null;
   try { r = view.reliefRaster(); } catch (_) { r = null; }
   if (!r || !r.canvas) return;

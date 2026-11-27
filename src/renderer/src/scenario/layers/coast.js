@@ -7,6 +7,8 @@
 //
 // `view` 字段：rasterLayer, getSeaDetail(), screenToWorld, w, h, px, polylineInView, strokeWorldPolyline
 
+import { openFastSkipHeavy } from '../openFast.js';
+
 function viewportBounds(view) {
   const tl = view.screenToWorld(0, 0);
   const br = view.screenToWorld(view.w, view.h);
@@ -16,6 +18,8 @@ function viewportBounds(view) {
 
 /** 地形档：等深线 + 海岸线（只在 `height` 档画；温度/降水/文化是专题图，加海深会被读成地形） */
 export function drawSeaDetailLayer(c, view) {
+  // 开图快路径（原型）：首帧不建海深/等深线（它们占开图 CPU 最大的一截）
+  if (openFastSkipHeavy()) return;
   const d = view.getSeaDetail();
   if (!d || (!d.isobaths.length && !d.coasts.length)) return;
   const { minX, minY, maxX, maxY } = viewportBounds(view);
@@ -46,6 +50,8 @@ export function drawSeaDetailLayer(c, view) {
  * 画在省份填色**之前** —— 陆地一侧会被省份盖住，只留下海侧的带和线。
  */
 export function drawPoliticalCoastLayer(c, view) {
+  // 开图快路径（原型）：首帧不建海深/海岸带，先让省色块出来；本模块安排一次全量重绘
+  if (openFastSkipHeavy()) return;
   const d = view.getSeaDetail();
   if (!d || !d.coasts || !d.coasts.length) return;
   const { minX, minY, maxX, maxY } = viewportBounds(view);

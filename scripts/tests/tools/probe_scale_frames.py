@@ -285,6 +285,9 @@ def main():
         log('openProject 落地：%s（轮询等 %+.1fs）' % (done, time.time() - t_open))
 
         # 进"历史剧本"页签：这就是"开图卡几秒"那一段（画布挂载 + 首帧 + 首次烘焙）
+        if flag('open-fast'):
+            cdp.eval("window.__SITIAN_OPEN_FAST__ = true; 1")
+            log('开图快路径：__SITIAN_OPEN_FAST__ = true（首帧跳重层，之后全量）')
         t_scn = time.time()
         # `--profile-open`：把这一段整段采样（找出开图的 2~5 秒到底花在谁身上）
         open_prof = None
@@ -309,6 +312,9 @@ def main():
         })()""" % (json.dumps(key), json.dumps(key)))
         log('选底图 + 适屏：%s（这一段之前 %.1fs）' % (fit, time.time() - t_scn))
         time.sleep(1.0)
+        if flag('open-fast'):
+            st, _ = ask(cdp, "JSON.stringify(window.__SITIAN_OPEN_STAGES__ || null)")
+            log('开图分段计时：%s' % st)
         if flag('profile-open'):
             prof_open = (cdp.send('Profiler.stop', {}) or {}).get('profile') or {}
             total_o, rows_o = aggregate(prof_open)
