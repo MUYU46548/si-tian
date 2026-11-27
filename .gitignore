@@ -248,3 +248,7 @@ build/interior-furniture/
 # 门开合弧的三张对照图（2026-11-15）：本地证据，禁止提交
 # 复现：python scripts/tests/drill_door_swing.py
 build/door-swing/
+
+# 剧本侧 4K 出图（2026-11-27）：本地证据，禁止提交（含真实地图数据）
+# 复现：python scripts/tests/tools/shot_scenario_export_4k.py --tag sample-era1
+build/export-4k/

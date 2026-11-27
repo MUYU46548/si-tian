@@ -26,7 +26,19 @@
       <button @click="$emit('toggleHistory')" title="撤销历史" :class="{ active: historyOpen }"><Icon name="history" :size="15"/>撤销历史</button>
     </div>
     <div class="tool-group" title="导出">
-      <button @click="$emit('exportPng')" title="导出当前剧本/年份为 PNG" data-testid="export-png"><Icon name="image" :size="15"/>导出 PNG</button>
+      <!-- 2026-11-27：单张 PNG 的“导出尺寸”（用户要 4K 入册，原来固定 2× 没有口子）。
+           标准 = 历史行为（图幅 2 倍）；4K = 成品长边至少 3840 像素，倍率按图幅自动算。
+           SVG 是矢量，不受这里影响；切片倍率在切片对话框里选。
+           ⚠️ 这是**动作参数**（点导出时随事件交给父组件），不是共享视图状态 ——
+             所以留在本组件的本地 ref 里，父组件不必为它多存一份。 -->
+      <label class="export-size" title="导出 PNG 的成品尺寸：标准 = 图幅 2 倍；4K = 长边至少 3840 像素（按图幅自动放大，适合印刷/入册）。SVG 是矢量，不受影响">
+        导出尺寸
+        <select v-model="exportScale" data-testid="export-scale">
+          <option value="standard">标准</option>
+          <option value="4k">4K</option>
+        </select>
+      </label>
+      <button @click="$emit('exportPng', exportScale)" title="导出当前剧本/年份为 PNG" data-testid="export-png"><Icon name="image" :size="15"/>导出 PNG</button>
       <button @click="$emit('exportSvg')" title="导出当前剧本/年份为 SVG 矢量图（可进 Illustrator/Inkscape 继续加工）" data-testid="export-svg"><Icon name="layers" :size="15"/>导出 SVG</button>
       <button @click="$emit('openSliceExport')" data-testid="open-slice-export"
               title="逐年切片导出（每个状态变化的年份一张图 + frames.json 清单，可交 ffmpeg 合成）"><Icon name="film" :size="15"/>切片</button>
@@ -38,7 +50,11 @@
 </template>
 
 <script setup>
+import { ref } from 'vue';
 import Icon from '../../../components/Icon.vue';
+
+/** 导出 PNG 的尺寸档：'standard'（历史 2×）/ '4k'（成品长边 ≥ 3840）。动作参数，随事件上抛。 */
+const exportScale = ref('standard');
 
 defineProps({
   /** 外交面板是否开着（决定那个按钮的高亮） */

@@ -5,10 +5,19 @@
 // 也不需要复制一遍画布的绘制管线。
 import { ref } from 'vue';
 import {
+  // 导出用河流几何（2026-11-27）：平滑 + 接尾巴/汇流焊接与画布同一条链
+  catmullRomPoints, RIVER_DRAW_COLOR,
+} from '../utils/riverRender';
+import { snapRiverTails, weldRiverJunctions } from '../utils/fmg/rivers';
+import { riverMouthWorldWidth } from '../utils/rivers';
+import { buildLandMask, clipPolylineToCoast, MOUTH_OVERSHOOT } from '../utils/coastline';
+import {
   serializeSvg, svgPathD, svgPath, svgRect, svgTextEl, svgCircleEl,
   // 地形底图内联位图（2026-10-27）：与行星侧导出同一手法（`<image>` + data URL）
   svgImageEl,
   hatchPatternDef, boundsOf, rasterizeSvg, escXml, stamp,
+  // “4K 档”的唯一换算（按图幅长边算倍率，不让每个调用方各算一套）
+  scaleForLongEdge,
   // A7：参考底图几何的唯一实现（象限索引 → 90° 步进 / flipH / 宽高互换）
   refImageSvgGroup,
 } from '../utils/svgExport';
@@ -151,6 +160,56 @@ function terrainReserveWorldBoxes(labels, style) {
     out.push({ x0: minX - pad, y0: minY - pad, x1: maxX + pad, y1: maxY + pad });
   }
   return out;
+}
+
+// ── 导出用河流几何（2026-11-27）────────────────────────────────────────────
+// 画布上的河由 `scenario/layers/features.js` 画；SVG 导出此前**一条河身都没有**
+// （只有河名）——“导出 = 你看到的那张图”在这里断了一环。这里复用同一份几何链：
+//   river.points → Catmull-Rom 平滑 → 接尾巴 → 汇流焊接（与 drawRiverPathsLayer 同序），
+//   宽度走 `utils/rivers.js#riverMouthWorldWidth`（唯一换算）。
+// 固定分辨率图不做画布的“屏幕像素下限”（那是缩小时不消失的兜底），改用世界单位硬下限
+// 0.4（与画布 RIVER_WORLD_FLOOR 同值），保证 4K 下细支流仍然可见。
+const RIVER_EXPORT_CHUNKS = 6;
+const RIVER_EXPORT_WORLD_FLOOR = 0.4;
+
+function riverGeometryForExport(rivers, terrain) {
+  const list = (rivers || []).filter((r) => r && Array.isArray(r.points) && r.points.length >= 2);
+  if (!list.length) return [];
+  let widthMax = 0;
+  for (const r of list) {
+    const w = Number(r.width);
+    if (Number.isFinite(w) && w > widthMax) widthMax = w;
+  }
+  const items = list.map((r) => {
+    const pts = r.points.map((p) => ({ x: p.x, y: p.y }));
+    return { river: r, curve: pts.length >= 3 ? catmullRomPoints(pts, 6) : pts };
+  });
+  if (items.length > 1) {
+    // 与画布同序：先接尾巴、再焊接（反了会把刚切好的断面又拉出一小段交叉）
+    const wrappers = items.map((it, i) => ({
+      id: i + 1, discharge: Number(it.river.width) || 0, points: it.curve,
+    }));
+    snapRiverTails(wrappers, { spacing: 8 });
+    weldRiverJunctions(wrappers, { spacing: 8 });
+    for (let i = 0; i < items.length; i++) items[i].curve = wrappers[i].points;
+  }
+  // 裁到海岸线（与画布同一条 clipPolylineToCoast / 同一 MOUTH_OVERSHOOT）：
+  // 真实 415 省项目实测 573 条生成河 267 条尾巴出陆（中位 2.77 世界单位），不裁就是“河捅进海”。
+  // 画布为“可选中/可删”保留整条都在水里的河；导出是成品图，直接丢弃（海里的河不该出现在图上）。
+  const landMask = buildLandMask(terrain || []);
+  const clipped = [];
+  for (const it of items) {
+    const res = clipPolylineToCoast(it.curve, landMask.lookup, { keepOvershoot: MOUTH_OVERSHOOT });
+    if (res.dropped || res.points.length < 2) continue;
+    it.curve = res.points;
+    clipped.push(it);
+  }
+  for (const it of clipped) {
+    const mouth = Math.max(RIVER_EXPORT_WORLD_FLOOR, riverMouthWorldWidth(it.river, { widthMax }));
+    it.mouth = mouth;
+    it.head = Math.max(RIVER_EXPORT_WORLD_FLOOR * 0.75, mouth * 0.22);
+  }
+  return clipped;
 }
 
 export function useScenarioExport({
@@ -373,6 +432,30 @@ export function useScenarioExport({
         body.push(svgPath(seaDs.join(' '), {
           fill: 'none', stroke: SEA_EDGE, 'stroke-width': 0.9, 'stroke-dasharray': '6 4', opacity: 0.85,
         }));
+      }
+    }
+
+    // ── 河流（2026-11-27）─────────────────────────────────────────────────────
+    // 画布把河画在省界之上、文字之下（ScenarioMap 的 drawRiversLayer / drawRiverPathsLayer）；
+    // 导出按同一层序插在这里。几何与宽度都走上面的唯一实现，不在 SVG 侧另算一套。
+    // 逐段描边（不是一条整河一个线宽）：源头细、河口粗；圆帽接缝，不靠 fill 多边形（会自交出洞）。
+    if (flags.rivers !== false) {
+      for (const it of riverGeometryForExport(baseMap.value?.rivers || [], terrain)) {
+        const curve = it.curve;
+        if (!curve || curve.length < 2) continue;
+        const chunks = Math.max(1, Math.min(RIVER_EXPORT_CHUNKS, curve.length - 1));
+        for (let c = 0; c < chunks; c++) {
+          const i0 = Math.floor((c * (curve.length - 1)) / chunks);
+          const i1 = Math.floor(((c + 1) * (curve.length - 1)) / chunks);
+          if (i1 <= i0) continue;
+          const width = it.head + (it.mouth - it.head) * ((c + 0.5) / chunks);
+          const d = svgPathD(curve.slice(i0, i1 + 1), { closed: false });
+          if (!d) continue;
+          body.push(svgPath(d, {
+            fill: 'none', stroke: RIVER_DRAW_COLOR, 'stroke-width': Math.max(0.25, width),
+            'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+          }));
+        }
       }
     }
 
@@ -710,16 +793,29 @@ export function useScenarioExport({
     }
   }
 
-  async function exportScenarioPNG(scale = 2) {
+  // 单张 PNG 的“导出尺寸”档（2026-11-27）：'standard' = 历史行为（2×）；
+  // '4k' = 成品**长边至少 3840 像素**（倍率按图幅包围盒自动算 —— 小图不会为了凑倍率而超采样）。
+  // SVG 是矢量，不受这里影响；逐年切片的倍率在它自己的对话框里选。
+  const EXPORT_LONG_EDGE = { standard: 0, '4k': 3840 };
+
+  async function exportScenarioPNG(mode = 'standard') {
     try {
-      const { svg } = buildScenarioSVG();
+      const built = buildScenarioSVG();
+      const { svg, width, height } = built;
+      // 兼容旧调用：数字 = 直接当倍率（此前的 API 是 `exportScenarioPNG(2)`）
+      const numeric = typeof mode === 'number' && mode > 0;
+      const targetLongEdge = numeric ? 0 : (EXPORT_LONG_EDGE[mode] || 0);
+      const scale = numeric ? mode : scaleForLongEdge(width, height, targetLongEdge, 2);
       const dataUrl = await rasterizeSvg(svg, scale);
+      const outW = Math.round(width * scale);
+      const outH = Math.round(height * scale);
       const tl = timeline.value;
       const k = currentEra.value;
       const name = `sitian-${safeName(tl.scenarios[k].name)}-${Math.round(currentYear.value)}-${stamp()}.png`;
       if (window.sitianAPI?.saveExportFile) {
         const r = await window.sitianAPI.saveExportFile({ dataUrl, defaultName: name });
-        if (r?.success) setStatus(`已导出 PNG：${r.path}`);
+        // 尺寸写进回执：选了“4K”却导出一张 2K 图时，用户要能从状态栏一眼看出来
+        if (r?.success) setStatus(`已导出 PNG：${r.path}（${outW}×${outH}）`);
         else if (r?.canceled) setStatus('已取消导出', 2000);
         else setStatus(`导出失败：${r?.error || '未知错误'}`);
       } else {
@@ -727,7 +823,7 @@ export function useScenarioExport({
         a.href = dataUrl; a.download = name; a.click();
         setStatus('已下载（浏览器回退模式）', 3000);
       }
-      return { success: true };
+      return { success: true, width: outW, height: outH, scale };
     } catch (e) {
       setStatus(`导出失败：${e.message}`);
       return { success: false, error: e.message };

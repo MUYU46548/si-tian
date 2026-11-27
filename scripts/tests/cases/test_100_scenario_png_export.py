@@ -25,8 +25,11 @@
      且除标注外逐像素一致；另有一枚"连导两次完全一致"的对照，证明 f1 的差异不是光栅化噪声。
   f3 非真空对照：一个必然不存在的颜色（`#00ff00`）在图上必须是 0 像素 ——
      否则说明颜色判据"什么都能匹配"，f1 的势力色断言就是空的。
+  f4 4K 档（2026-11-27）：把同一行的“导出尺寸”下拉切到 4K（走真 change 事件）→
+     PNG **长边 ≥ 3840**、标准档仍 < 3840（判别力）、4K 图非空白且尺寸 = 按 SVG 长边算出的倍率。
 """
 import json
+import math
 import os
 import sys
 import time
@@ -52,9 +55,9 @@ MIN_COLOR_PIXELS = 1000     # 实测“原色 + 0.72 合成色”合计：C1=272
 MIN_TEXT_PIXELS = 1500      # 实测“标注层贡献的像素”（有/无标注两导之差，2026-10-25 白字档 = 9256）
 MIN_LABEL_PIXELS = 250      # 白字实心笔画（2026-10-25 实测 977；旧深灰字档曾为 904）
 # ⚠️ 诚实交代：上面两条**文字**阈值是按按钮的默认档 `exportScenarioPNG()`（= `scale=2`）标定的。
-#    反向探针把默认档改成 `scale=1` 后，这两条会跟着红（同时尺寸判据先红）。这是**正确**的红
-#    （PNG 确实不再是 2 倍图），但要知道它们是**尺度相关**的：
-#    日后真要支持"用户自选倍率"，这两条得改成按 `scale` 缩放。
+#    2026-11-27 起同一行多了“导出尺寸：标准 / 4K”（见 f4），但**默认仍是 2×**，所以这里不改；
+#    f4 的 4K 判据只判“长边 / 尺寸口径 / 非空白 / 势力色在场”，不沿用这两条尺度相关的阈值。
+#    如果日后把默认倍率改掉，这两条得改成按 `scale` 缩放（否则会假红）。
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -68,6 +71,12 @@ SEED_JS = r"""
     points: [{x:x0,y:150},{x:x0+140,y:150},{x:x0+140,y:290},{x:x0,y:290}] });
   s.addBaseProvince(KEY, mk100('prov_a', '甲省测试地名甲乙丙', 200), { checkOverlap: false });
   s.addBaseProvince(KEY, mk100('prov_b', '乙省测试地名丁戊己', 400), { checkOverlap: false });
+  // 一条已知形状的河（2026-11-27）：导出此前**只有河名没有河身**，这条守“河真的画进 PNG”。
+  // width=1.2 是绝对量纲（非 river_gen_ 前缀）→ riverMouthWorldWidth = 1.2×2.4 = 2.88 世界单位。
+  s.baseMaps[KEY].rivers = [{
+    id: 'river_test_alpha', width: 1.2,
+    points: [{ x: 230, y: 170 }, { x: 300, y: 205 }, { x: 370, y: 250 }],
+  }];
   const P = (id, name, color) => ({ id, name, color });
   s.createScenario(KEY + '/甲时代', { ownerKey: KEY, name: '甲时代', order: 1,
     era: { roman: 'I', label: '甲', startYear: '2000', endYear: '2010' },
@@ -172,9 +181,19 @@ EXPORT_JS = r"""(async () => {
     return { success: true, path: 'mock/p0.png' };
   };
 
+  // 导出尺寸（2026-11-27）：走**真的选择框**（不是直接写组件状态）——
+  // 这样“下拉的 v-model 真的更新了、按钮把值带进导出”也在判据里。
+  const sel = document.querySelector('[data-testid="export-scale"]');
+  if (sel) {
+    sel.value = __EXPORT_SCALE__;
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+  } else if (__EXPORT_SCALE__ !== 'standard') {
+    fails.push('导出尺寸选择框不在 DOM（data-testid=export-scale）');
+  }
   SM.showLabels = __SHOW_LABELS__;
   SM.exportStatus = '';
   await tick(300);
+  notes.exportScale = sel ? sel.value : 'standard';
 
   const btn = document.querySelector('[data-testid="export-png"]');
   if (!btn) {
@@ -214,6 +233,8 @@ EXPORT_JS = r"""(async () => {
   notes.svgPathCount = (svgText.match(/<path /g) || []).length;
   notes.svgTextCount = (svgText.match(/<text /g) || []).length;
   notes.svgPatternCount = (svgText.match(/<pattern /g) || []).length;
+  // 2026-11-27：河身色（#5d97bb）必须在 SVG 里 —— 河名一直有，河身此前一条都没有
+  notes.svgHasRiverColor = svgText.toUpperCase().indexOf('5D97BB') >= 0;
   // 文本层：省名 + 势力图例名 + 剧本名（"导出物应自解释"）
   notes.svgHasProvA = svgText.indexOf('甲省') >= 0;
   notes.svgHasProvB = svgText.indexOf('乙省') >= 0;
@@ -226,11 +247,12 @@ EXPORT_JS = r"""(async () => {
 })()"""
 
 
-def _export_expr(show_labels, with_seed):
+def _export_expr(show_labels, with_seed, export_scale='standard'):
     return (EXPORT_JS.replace('__STORE__', STORE).replace('__SM__', SM)
             .replace('__KEY__', json.dumps(KEY))
             .replace('__SEED__', _seed() if with_seed else '')
             .replace('__WITH_SEED__', 'true' if with_seed else 'false')
+            .replace('__EXPORT_SCALE__', json.dumps(export_scale))
             .replace('__SHOW_LABELS__', 'true' if show_labels else 'false'))
 
 
@@ -261,9 +283,9 @@ def _fetch_data_url(cdp, desc):
         chunk=524288, desc=desc)
 
 
-def _do_export(cdp, show_labels, with_seed, desc):
+def _do_export(cdp, show_labels, with_seed, desc, export_scale='standard'):
     """跑一次导出探针；返回 (ok, notes_or_error, data_url_or_None)。"""
-    ok, res = eval_json(cdp, _export_expr(show_labels, with_seed), required=('fails', 'notes'), desc=desc)
+    ok, res = eval_json(cdp, _export_expr(show_labels, with_seed, export_scale), required=('fails', 'notes'), desc=desc)
     if not ok:
         return False, res, None
     if res['fails']:
@@ -304,10 +326,22 @@ def run(cdp):
     if not ok:
         return False, f'一致性对照导出失败：{notes3}'
 
+    # ══════════════ f4：4K 档（2026-11-27）══════════════
+    # 单张 PNG 此前固定 2×：2 省 fixture 出 840×440，真实 415 省图幅也只到 ~3678。
+    # 现在同一行多了“导出尺寸”选择框（标准 / 4K）。这条判据要证明：
+    #   ① 下拉真的接到父组件（走 select 的 change，不直接写状态）
+    #   ② 4K 档成品**长边 ≥ 3840**（用户要的是成品尺寸，不是倍率数字）
+    #   ③ 标准档仍 < 3840（否则 4K 判据没有判别力）
+    #   ④ 4K 图不是空白（势力色仍在），且尺寸与“按 SVG 长边算出的倍率”一致
+    ok, notes4, du_4k = _do_export(cdp, True, False, 'f4 导出 4K（长边 ≥ 3840）', export_scale='4k')
+    if not ok:
+        return False, f'4K 导出失败：{notes4}'
+
     # ══════════════ Python 侧：Pillow 像素判据 ══════════════
     try:
         img_a, img_b, img_b2 = png.open_png(png.decode_data_url(du_a)), \
             png.open_png(png.decode_data_url(du_b)), png.open_png(png.decode_data_url(du_b2))
+        img_4k = png.open_png(png.decode_data_url(du_4k))
     except Exception as e:
         return False, f'dataUrl 解不成 PNG（{e}）；长度 {len(du_a)}，前缀 {du_a[:22]!r}'
 
@@ -332,6 +366,15 @@ def run(cdp):
         color_stats[name] = {'exact': exact, 'blend': blend, 'total': exact + blend}
         if exact + blend < MIN_COLOR_PIXELS:
             fails.append(f'势力色 {name} 在图上像素过少：原色 {exact} + 0.72 合成 {blend} = {exact + blend} < {MIN_COLOR_PIXELS}')
+
+    # ── 河流色（2026-11-27）──
+    # fixture 里有一条绝对宽度的已知河；2× 与 4K 都必须真有它的像素（不是只把河名写进 SVG）。
+    river_px = png.count_near(img_a, (0x5d, 0x97, 0xbb), TOL)
+    river_px_4k = png.count_near(img_4k, (0x5d, 0x97, 0xbb), TOL)
+    if river_px < 20:
+        fails.append(f'2× 图上河流色像素 {river_px} < 20 —— 河身没画进 PNG（只有河名）')
+    if river_px_4k < 80:
+        fails.append(f'4K 图上河流色像素 {river_px_4k} < 80 —— 河身没画进 PNG（只有河名）')
 
     # ── 标注（省名）的判据：**两套互补口径**，都出自“有标注 / 无标注”两张独立导出 ──
     #   ① `text_px` = 两份导出逐像素差 = **标注这一层贡献的全部像素**（含抗锯齿边缘）
@@ -366,6 +409,33 @@ def run(cdp):
             fails.append(f'非真空对照失败：颜色 {name.strip()} 不该出现，却有 {ctrl_stats[name.strip()]} 像素'
                          '（说明颜色判据什么都能匹配，势力色断言是空的）')
 
+    # ── f4：4K 档判据（2026-11-27）──
+    # 注释见上方 f4 导出段：下拉接线 / 长边 ≥3840 / 标准档仍 <3840 / 非空白 + 尺寸口径一致。
+    if notes4.get('exportScale') != '4k':
+        fails.append(f"4K 档没有生效：选择框的值 = {notes4.get('exportScale')!r}（v-model 没接上？）")
+    if '已导出 PNG' not in str(notes4.get('exportStatus') or ''):
+        fails.append(f"4K 导出的状态栏不是“已导出 PNG”：{notes4.get('exportStatus')!r}")
+    if max(img_4k.size) < 3840:
+        fails.append(f'4K 档长边 {max(img_4k.size)} < 3840（尺寸 {img_4k.size}）')
+    if max(img_a.size) >= 3840:
+        fails.append(f'标准档长边 {max(img_a.size)} 已经 ≥3840 —— 4K 判据没有判别力（或默认倍率被改了）')
+    svg_w4, svg_h4 = notes4.get('svgW', -1), notes4.get('svgH', -1)
+    long4 = max(svg_w4, svg_h4)
+    if long4 > 0:
+        want_scale = max(2.0, math.ceil((3840.0 / long4) * 10000) / 10000)
+        want4 = (int(svg_w4 * want_scale + 0.5), int(svg_h4 * want_scale + 0.5))
+        if img_4k.size != want4:
+            fails.append(f'4K 尺寸 {img_4k.size} != 按 SVG {svg_w4}×{svg_h4} 算出的 {want4}（倍率口径不一致）')
+    if png.unique_colors(img_4k) < MIN_UNIQUE_COLORS:
+        fails.append(f'4K 图去重颜色 {png.unique_colors(img_4k)} < {MIN_UNIQUE_COLORS}（疑似空白）')
+    color_4k = {}
+    for name, hexc in (('#c23b3b', C1), ('#4a90d9', C2), ('#e6a23c', C3)):
+        c = tuple(int(hexc[i:i + 2], 16) for i in (1, 3, 5))
+        n4 = png.count_near(img_4k, c, TOL) + png.count_near_blend(img_4k, c, png.PROVINCE_FILL_ALPHA, png.SVG_BG, TOL)
+        color_4k[name] = n4
+        if n4 == 0:
+            fails.append(f'4K 图上缺势力色 {name}（可能是空白图）')
+
     # SVG 文本层判据（与像素判据互补：一个判"画出来了"，一个判"内容对不对"）
     if not (notes1['svgHasProvA'] and notes1['svgHasProvB']):
         fails.append(f'SVG 文本里缺省名：aprov={notes1["svgHasProvA"]} bprov={notes1["svgHasProvB"]}')
@@ -379,16 +449,21 @@ def run(cdp):
         fails.append('SVG 里一个 <text> 都没有')
     if not notes1['svgHasLabelColor']:
         fails.append('SVG 里没有白字省名（fill="#FFFFFF"，与画布 PROVINCE_LABEL_STYLE 同源）')
+    if not notes1.get('svgHasRiverColor'):
+        fails.append('SVG 里没有河流色 #5D97BB —— 河身没进导出（只有河名）')
 
     if fails:
         return False, ('PNG 导出判据失败 ' + str(len(fails)) + ' 项：' + '；'.join(fails[:8])
                        + ' | 实测：' + json.dumps({
                            'png_size': img_a.size, 'expect': expect_size, 'uniqueColors': n_unique,
-                           'colors': color_stats, 'labelLayerPixels': text_px, 'labelStrokePixels': label_px,
+                           'colors': color_stats, 'riverPixels': {'2x': river_px, '4k': river_px_4k},
+                           'labelLayerPixels': text_px, 'labelStrokePixels': label_px,
                            'labelLayerPixelsAfterOff': text_px_off,
                            'candidateColorCounts_含假阳性地板_仅参考': {'on': direct_on, 'off': direct_off},
                            'noiseBetweenTwoExports': noise_px,
                            'controlColors': ctrl_stats, 'status': notes1['exportStatus'],
+                           '4k': {'size': img_4k.size, 'colors': color_4k,
+                                   'scale': notes4.get('exportScale'), 'status': notes4.get('exportStatus')},
                            'bytes': len(du_a), 'svgSource': notes1.get('svgSource'),
                            'svgText': notes1['svgTextCount'],
                            'svgPaths': notes1['svgPathCount'], 'svgPatterns': notes1['svgPatternCount'],
@@ -401,10 +476,13 @@ def run(cdp):
         f'(exact {color_stats["#c23b3b"]["exact"]}) C2={color_stats["#4a90d9"]["total"]}'
         f'(exact {color_stats["#4a90d9"]["exact"]}) C3={color_stats["#e6a23c"]["total"]}'
         f'(exact {color_stats["#e6a23c"]["exact"]})'
+        f' / 河身像素 2×={river_px} 4K={river_px_4k}'
         f' / 标注层像素 {text_px}（其中白字实心笔画 {label_px}）'
         f' → 关掉 labels 后 {text_px_off}（同一算子，归零）'
         f' / 连导两次差异 {noise_px}px'
         f' / 非真空对照 #00ff00={ctrl_stats["#00ff00"]} #ff00ff={ctrl_stats["#ff00ff"]}'
+        f' / 4K 档 {img_4k.size[0]}×{img_4k.size[1]}（长边 {max(img_4k.size)}，'
+        f'势力色 C1={color_4k["#c23b3b"]} C2={color_4k["#4a90d9"]} C3={color_4k["#e6a23c"]}）'
         f' / SVG {notes1["svgPathCount"]} path {notes1["svgTextCount"]} text {notes1["svgPatternCount"]} pattern'
         f'（源: {notes1.get("svgSource")}）'
         f' / 状态栏“{notes1["exportStatus"]}”')

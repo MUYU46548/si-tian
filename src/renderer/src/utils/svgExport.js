@@ -206,6 +206,27 @@ export function rasterizeSvg(svg, scale = 2) {
   });
 }
 
+/**
+ * “4K 档”的倍率：成品**长边至少** `targetLongEdge` 像素，且不低于默认的 2×。
+ *
+ * 为什么按长边算而不是给一个固定倍率：单张导出按**图幅包围盒**定尺寸（不是画布），
+ * 同样的 4× 在 72 省的小图上会超 6K、在 415 省的大图上还不够 4K。
+ * 用户要的是“这张图能印/能入册”，不是某个倍率数字。
+ *
+ * @param {number} width  SVG 宽（1× 像素）
+ * @param {number} height SVG 高
+ * @param {number} targetLongEdge 目标长边（px；0/非法 = 只用下限）
+ * @param {number} minScale 下限（默认 2 = 历史行为）
+ * @returns {number} 光栅化倍率（数学值；最终尺寸由 `rasterizeSvg` 取整）
+ */
+export function scaleForLongEdge(width, height, targetLongEdge, minScale = 2) {
+  const longEdge = Math.max(Number(width) || 0, Number(height) || 0);
+  const target = Number(targetLongEdge) || 0;
+  if (longEdge <= 0 || target <= 0) return minScale;
+  // 向上取到 4 位小数：只修浮点尾巴，不许把目标长边缩到 3840 以下
+  return Math.max(minScale, Math.ceil((target / longEdge) * 10000) / 10000);
+}
+
 /** 时间戳文件名片段：20260917-1930 */
 export function stamp(d = new Date()) {
   const p = (n) => String(n).padStart(2, '0');

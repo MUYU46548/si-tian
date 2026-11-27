@@ -506,7 +506,7 @@
         @open-lineage="showLineagePanel = true"
         @toggle-diplomacy="diplomacyOpen = !diplomacyOpen"
         @toggle-history="showHistoryPanel = !showHistoryPanel"
-        @export-png="exportScenarioPNG()"
+        @export-png="exportScenarioPNG"
         @export-svg="exportScenarioSVG()"
         @open-slice-export="showSliceExport = true"
         @export-data="exportScenariosJson({ scope: 'current' })"
@@ -2383,7 +2383,7 @@ const scenarioExport = useScenarioExport({  store,
   //   省份只描边不填色）。见 `exportTerrainSnapshot`。
   layerFlags: () => ({
     labels: showLabels.value, borders: showBorders.value,
-    placeNames: showPlaceNames.value, terrainNames: showTerrainNames.value,
+    placeNames: showPlaceNames.value, terrainNames: showTerrainNames.value, rivers: showRiverBase.value,
     terrainBg: rasterLayer.value === 'height' || rasterLayer.value === 'temp' || rasterLayer.value === 'prec',
   }),
   exportTerrain: exportTerrainSnapshot,
