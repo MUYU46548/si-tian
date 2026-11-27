@@ -273,6 +273,15 @@ async function main() {
     return `${g.terrain.grid.cellsX}×${g.terrain.grid.cellsY} 格 · 高差 ${g.stats.terrainMin}~${g.stats.terrainMax} · 栅格陆地 ${(rasterArea / 1e3).toFixed(0)}k 单位²`;
   });
 
+  // 2026-11-27 尺度探针抓到的坑：`synthesizeHeightmapFromTerrain` 默认 maxCells=60000，
+  // 造陆要 400/600 格时被它**静默放粗到 247 格**（面板显示 400，实际 247）。造陆链必须自己给上限。
+  check('a10b 大图地形不被 60k 默认上限静默放粗（terrainCells=400 应真给到 ~400 格）', () => {
+    const g = gen({ seed: 7, landRatio: 0.32, terrainCells: 400 });
+    const cx = g.terrain && g.terrain.grid ? g.terrain.grid.cellsX : 0;
+    assert(cx >= 380 && cx <= 420, `要 400 格实际 ${cx} 格 —— 又被 maxCells 放粗了`);
+    return `${cx} 格 · 生成 ${g.stats.terrainCells || '?'} 格`;
+  });
+
   check('a11 海岸细节尺度：中位边长 ≤ 12 世界单位（v3 是 17.6 —— 放大就是台阶）', () => {
     const edgeLens = (g) => {
       const out = [];

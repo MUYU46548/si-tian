@@ -781,11 +781,19 @@ export function generateLandmass(params, bbox) {
   const terrainCells = Number.isFinite(Number(params.terrainCells)) && Number(params.terrainCells) > 0
     ? Math.min(2048, Math.max(96, Math.round(Number(params.terrainCells))))
     : Math.round(170 + roughness * 30);
+  // 🔴 2026-11-27 尺度探针抓到：`synthesizeHeightmapFromTerrain` 默认 `maxCells=60000`，
+  // 2000 省 / 自动 600 格会被它**静默放粗到 247 格** —— 面板显示 600，实际 247。
+  // 造陆这条链自己给上限：按目标格数与图幅比例留 25% 余量，最高 400 万格（再高先解决开图分段）。
+  const maxTerrainCells = Math.max(
+    60000,
+    Math.min(4_000_000, Math.round(terrainCells * terrainCells * (H / Math.max(1, W)) * 1.25 + 1000)),
+  );
   const hm = synthesizeHeightmapFromTerrain(
     rings.map((r) => ({ rings: [r.points, ...(r.holes || [])] })),
     {
       isLand: landMask.isLand,
       cellsAcross: terrainCells,
+      maxCells: maxTerrainCells,
       seed,
       // 参数面板的"崎岖度"直接喂给山脉/裂谷权重：同一个滑杆既改岸线也改山势。
       // 🔴 高原面权重必须**压低**（默认 0.92 → 这里 0.3）：高原是"大面积同一高度"，
